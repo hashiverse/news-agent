@@ -10,6 +10,7 @@ import logging
 import signal
 import sys
 import threading
+import time
 from pathlib import Path
 
 import click
@@ -134,12 +135,27 @@ def run(feeds_path: Path, control_path: Path, create_new: bool) -> None:
             logger.info("received signal %s, shutting down", signum)
             stop_event.set()
 
-        signal.signal(signal.SIGINT, _shutdown)
+        # SIGTERM (and SIGINT, where the OS delivers it via signal handler) trigger
+        # an orderly shutdown by setting the stop event. SIGINT on Windows is
+        # better handled via KeyboardInterrupt below.
         if hasattr(signal, "SIGTERM"):
             signal.signal(signal.SIGTERM, _shutdown)
-
         try:
-            stop_event.wait()
+            signal.signal(signal.SIGINT, _shutdown)
+        except (AttributeError, ValueError):
+            # ValueError if not main thread; AttributeError if SIGINT missing.
+            pass
+
+        # Poll the stop event with a short timeout instead of blocking forever.
+        # On Windows, an unbounded Event.wait() swallows Ctrl-C — Python only
+        # checks for signals between bytecode steps, and time.sleep() yields
+        # control in a way Event.wait() does not. Belt-and-braces: also catch
+        # KeyboardInterrupt explicitly.
+        try:
+            while not stop_event.is_set():
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            logger.info("received Ctrl-C, shutting down")
         finally:
             watcher.stop()
             logger.info("stopped")
