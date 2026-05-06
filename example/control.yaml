@@ -1,0 +1,34 @@
+# news-agent example control file.
+#
+# Each item under `identities:` describes a hashiverse identity hosted by this
+# daemon. Replace the salts before running for real — these are sample values.
+identities:
+  - name: bbc-mirror
+    salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
+    description: "Mirror of BBC News and BBC Science feeds."
+    nickname: "BBC Mirror"
+    status: "Auto-mirrored from BBC RSS feeds. Not affiliated with the BBC."
+    enabled: true
+    max_posts_per_day: 30
+    include_selectors:
+      - /country/gb/*
+      - /topic/news/*
+    exclude_selectors:
+      - /topic/sports/*
+    exclude_urls:
+      - bbc.co.uk/sport
+      - bbc.co.uk/weather
+
+  - name: science-mirror
+    salt: "c3a7e2f1b9d4a8e6c2f5d1b8e4a7c3f6d2b9e5a8c1f4d7b3e9a6c2f5d8b1e4c7"
+    description: "Cross-publisher science feed."
+    nickname: "Science Daily Mirror"
+    status: "Top science stories from public-interest sources."
+    enabled: true
+    max_posts_per_day: 20
+    include_selectors:
+      - /topic/science/*
+      - /topic/technology/*
+      - /topic/cryptography/*
+
+# touched at 1778078246atesthas

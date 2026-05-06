@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "news-agent"
+version = "0.1.0"
+description = "Forkable RSS-to-hashiverse mirroring daemon."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "news-agent contributors" }]
+dependencies = [
+    "click>=8.1",
+    "pyyaml>=6.0",
+    "blake3>=0.4",
+    "watchdog>=4.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+news-agent = "news_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
