@@ -1,18 +1,14 @@
 identities:
-  - name: short-salt-ident
-    salt: "tooshort"
-    description: "This identity should be skipped at load time."
+  - salt: "tooshort"
     nickname: "Short Salt"
     status: "Should not appear."
     max_posts_per_day: 10
-    include_selectors:
-      - /topic/news/*
+    sources:
+      - https://example.com/rss.xml
 
-  - name: valid-ident
-    salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
-    description: "This one is fine."
+  - salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
     nickname: "Valid"
     status: "I am here."
     max_posts_per_day: 5
-    include_selectors:
-      - /topic/science/*
+    sources:
+      - https://example.com/science.xml

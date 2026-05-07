@@ -1,6 +1,6 @@
-"""In-memory runtime state — the parsed-and-validated control file + feeds list.
+"""In-memory runtime state — the parsed-and-validated control file.
 
-State is swapped atomically when either input file changes on disk. Readers
+State is swapped atomically when the control file changes on disk. Readers
 that grabbed a snapshot keep using their snapshot until they ask for a fresh
 one.
 """
@@ -11,14 +11,12 @@ import threading
 from dataclasses import dataclass
 
 from news_agent.config import ControlConfig
-from news_agent.opml_loader import FeedSpec
 
 
 @dataclass(frozen=True)
 class RuntimeSnapshot:
     """Immutable view of the daemon's current loaded state."""
 
-    feeds: tuple[FeedSpec, ...]
     control: ControlConfig
 
 

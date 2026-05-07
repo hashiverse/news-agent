@@ -2,8 +2,7 @@
 
 These tests use a real watchdog observer against a temp directory, so they're
 mildly platform-sensitive. Each test waits up to a few seconds for the
-debounced callback to fire and skips on platforms where watchdog's polling
-fallback is too slow to be reliable.
+debounced callback to fire.
 """
 
 from __future__ import annotations
@@ -12,20 +11,16 @@ import threading
 import time
 from pathlib import Path
 
-import pytest
-
 from news_agent.watcher import FileWatcher
 
 WAIT_BUDGET_SECONDS = 5.0
 DEBOUNCE_SECONDS = 0.2
 
 
-def _make_files(tmp_path: Path) -> tuple[Path, Path]:
-    feeds = tmp_path / "feeds.opml"
+def _make_control_file(tmp_path: Path) -> Path:
     control = tmp_path / "control.yaml"
-    feeds.write_text("<opml version=\"2.0\"/>")
     control.write_text("identities: []\n")
-    return feeds, control
+    return control
 
 
 def _wait_for(condition, timeout: float = WAIT_BUDGET_SECONDS) -> bool:
@@ -37,58 +32,33 @@ def _wait_for(condition, timeout: float = WAIT_BUDGET_SECONDS) -> bool:
     return False
 
 
-def test_modifying_feeds_file_fires_feeds_callback(tmp_path):
-    feeds, control = _make_files(tmp_path)
-    events: list[str] = []
-    seen_event = threading.Event()
+def test_modifying_control_file_fires_callback(tmp_path):
+    control = _make_control_file(tmp_path)
+    fired = threading.Event()
 
-    def on_change(key: str) -> None:
-        events.append(key)
-        seen_event.set()
+    def on_change() -> None:
+        fired.set()
 
-    watcher = FileWatcher(feeds, control, on_change, debounce_seconds=DEBOUNCE_SECONDS)
-    watcher.start()
-    try:
-        time.sleep(0.2)
-        feeds.write_text("<opml version=\"2.0\"/><!-- changed -->")
-        assert seen_event.wait(WAIT_BUDGET_SECONDS), "callback didn't fire"
-    finally:
-        watcher.stop()
-
-    assert "feeds" in events
-
-
-def test_modifying_control_file_fires_control_callback(tmp_path):
-    feeds, control = _make_files(tmp_path)
-    events: list[str] = []
-    seen_event = threading.Event()
-
-    def on_change(key: str) -> None:
-        events.append(key)
-        seen_event.set()
-
-    watcher = FileWatcher(feeds, control, on_change, debounce_seconds=DEBOUNCE_SECONDS)
+    watcher = FileWatcher(control, on_change, debounce_seconds=DEBOUNCE_SECONDS)
     watcher.start()
     try:
         time.sleep(0.2)
         control.write_text("identities: []  # change\n")
-        assert seen_event.wait(WAIT_BUDGET_SECONDS), "callback didn't fire"
+        assert fired.wait(WAIT_BUDGET_SECONDS), "callback didn't fire"
     finally:
         watcher.stop()
 
-    assert "control" in events
-
 
 def test_burst_of_writes_is_debounced_to_one_callback(tmp_path):
-    feeds, control = _make_files(tmp_path)
-    events: list[tuple[str, float]] = []
+    control = _make_control_file(tmp_path)
+    events: list[float] = []
     lock = threading.Lock()
 
-    def on_change(key: str) -> None:
+    def on_change() -> None:
         with lock:
-            events.append((key, time.monotonic()))
+            events.append(time.monotonic())
 
-    watcher = FileWatcher(feeds, control, on_change, debounce_seconds=DEBOUNCE_SECONDS)
+    watcher = FileWatcher(control, on_change, debounce_seconds=DEBOUNCE_SECONDS)
     watcher.start()
     try:
         time.sleep(0.2)
@@ -101,18 +71,17 @@ def test_burst_of_writes_is_debounced_to_one_callback(tmp_path):
     finally:
         watcher.stop()
 
-    control_events = [e for e in events if e[0] == "control"]
-    assert len(control_events) == 1, f"expected 1 debounced callback, got {len(control_events)}"
+    assert len(events) == 1, f"expected 1 debounced callback, got {len(events)}"
 
 
 def test_unrelated_file_in_same_dir_is_ignored(tmp_path):
-    feeds, control = _make_files(tmp_path)
-    events: list[str] = []
+    control = _make_control_file(tmp_path)
+    fired = threading.Event()
 
-    def on_change(key: str) -> None:
-        events.append(key)
+    def on_change() -> None:
+        fired.set()
 
-    watcher = FileWatcher(feeds, control, on_change, debounce_seconds=DEBOUNCE_SECONDS)
+    watcher = FileWatcher(control, on_change, debounce_seconds=DEBOUNCE_SECONDS)
     watcher.start()
     try:
         time.sleep(0.2)
@@ -123,4 +92,29 @@ def test_unrelated_file_in_same_dir_is_ignored(tmp_path):
     finally:
         watcher.stop()
 
-    assert events == []
+    assert not fired.is_set()
+
+
+def test_callback_exception_does_not_kill_watcher(tmp_path):
+    control = _make_control_file(tmp_path)
+    calls = {"n": 0}
+    lock = threading.Lock()
+
+    def on_change() -> None:
+        with lock:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("first call always fails")
+
+    watcher = FileWatcher(control, on_change, debounce_seconds=DEBOUNCE_SECONDS)
+    watcher.start()
+    try:
+        time.sleep(0.2)
+        for i in range(3):
+            control.write_text(f"identities: []  # change {i}\n")
+            time.sleep(DEBOUNCE_SECONDS * 2)
+    finally:
+        watcher.stop()
+
+    # Despite the exception on the first call, subsequent edits still fire.
+    assert calls["n"] >= 2, f"got {calls['n']} calls"

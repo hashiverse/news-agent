@@ -1,16 +1,19 @@
 """``news-agent`` CLI entrypoint.
 
-Phase 2 scope: read the two files (local path or HTTPS URL), set up the
-directory tree, watch for local-file changes, periodically re-fetch URL inputs
-to detect upstream changes, log when reloads happen. No keys, no hashiverse
-client interaction yet.
+Reads a YAML control file (local path or HTTPS URL), sets up the per-daemon
+data directory, and watches the control file for changes (with periodic
+re-fetch when it's a remote URL). No keys, no hashiverse client interaction
+yet — those land in later phases.
 """
 
 from __future__ import annotations
 
+import atexit
 import logging
+import shutil
 import signal
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -25,11 +28,9 @@ from news_agent.data_dir import (
     ensure_identity_dirs,
 )
 from news_agent.global_salt import (
-    GlobalSalt,
     MissingGlobalSaltError,
     load_global_salt,
 )
-from news_agent.opml_loader import FeedSpec, OpmlParseError, load_opml
 from news_agent.poller import RemotePoller
 from news_agent.remote_source import (
     CachedFile,
@@ -52,40 +53,29 @@ def _configure_logging() -> None:
     )
 
 
-def _load_inputs(
-    feeds_path: Path, control_path: Path
-) -> tuple[tuple[FeedSpec, ...], ControlConfig]:
-    feeds = tuple(load_opml(feeds_path))
-    control = load_control(control_path)
-    return feeds, control
-
-
-def _summary(feeds: tuple[FeedSpec, ...], control: ControlConfig) -> str:
+def _summary(control: ControlConfig) -> str:
+    total_sources = sum(len(i.sources) for i in control.identities)
     return (
-        f"loaded {len(feeds)} feed(s) and "
-        f"{len(control.identities)} valid identity/identities"
+        f"loaded {len(control.identities)} valid identity/identities "
+        f"with {total_sources} source URL(s) total"
     )
 
 
-def _resolve_input(
-    arg: str, cache_dir: Path, cache_filename: str
+def _resolve_control(
+    arg: str, cache_dir: Path
 ) -> tuple[Path, str | None, CachedFile | None]:
-    """Resolve a CLI argument to a local path.
+    """Resolve the ``--control`` argument to a local path.
 
-    If ``arg`` is an HTTPS URL: normalize it (blob → raw), fetch into the cache
-    directory, return the cache path. If the initial fetch fails and no cache
-    exists from a previous run, raise :class:`click.ClickException`.
+    URL: normalize (blob → raw), fetch into the cache, return cache path.
+    Path: validate existence, return as-is.
 
-    If ``arg`` is a local path: validate it exists, return it as-is.
-
-    Returns ``(local_path, normalized_url_or_None, cached_file_or_None)``. The
-    URL and cached-file objects are None for local paths, populated for URLs.
+    Returns ``(local_path, normalized_url_or_None, cached_file_or_None)``.
     """
     if is_url(arg):
         url = normalize_github_url(arg)
         if url != arg:
             logger.info("rewriting GitHub blob URL to raw: %s", url)
-        cached = CachedFile.for_filename(cache_dir, cache_filename)
+        cached = CachedFile.for_filename(cache_dir, "control.yaml")
         outcome = fetch_to_cache(url, cached)
         if outcome is FetchOutcome.NO_CACHE:
             raise click.ClickException(
@@ -110,18 +100,11 @@ def main() -> None:
 
 @main.command()
 @click.option(
-    "--feeds",
-    "feeds_arg",
-    type=str,
-    required=True,
-    help="Path to the OPML feeds file, OR an HTTPS URL (e.g. a raw.githubusercontent.com URL or a github.com/.../blob/... URL — blob URLs are auto-rewritten).",
-)
-@click.option(
     "--control",
     "control_arg",
     type=str,
     required=True,
-    help="Path to the YAML control file, OR an HTTPS URL.",
+    help="Path to the YAML control file, OR an HTTPS URL (e.g. a raw.githubusercontent.com URL or a github.com/.../blob/... URL — blob URLs are auto-rewritten).",
 )
 @click.option(
     "--create-new",
@@ -133,54 +116,71 @@ def main() -> None:
     type=click.IntRange(min=1),
     default=60,
     show_default=True,
-    help="How often to re-fetch URL-typed inputs (minutes).",
+    help="How often to re-fetch a URL-typed control file (minutes). Ignored for local-path control files.",
+)
+@click.option(
+    "--test",
+    "test_mode",
+    is_flag=True,
+    help="Run with an ephemeral home directory created in a temp path; deleted on exit. Implies --create-new. Useful for smoke tests so they don't leave debris in ~/.news-agent.",
 )
 def run(
-    feeds_arg: str,
     control_arg: str,
     create_new: bool,
     remote_poll_minutes: int,
+    test_mode: bool,
 ) -> None:
-    """Start the daemon. Watches both files for changes and reloads in place."""
+    """Start the daemon. Watches the control file for changes and reloads in place."""
     _configure_logging()
 
     pollers: list[RemotePoller] = []
     watcher: FileWatcher | None = None
+    ephemeral_home: Path | None = None
+
+    if test_mode:
+        ephemeral_home = Path(tempfile.mkdtemp(prefix="news-agent-test-"))
+        logger.info("test mode: using ephemeral home directory at %s", ephemeral_home)
+        create_new = True  # the directory definitely doesn't exist yet
+        # atexit registration is a belt-and-braces: it runs on normal exit,
+        # SystemExit, and unhandled exceptions, even if the outer finally block
+        # below didn't get a chance to run (e.g. signal-killed mid-syscall).
+        atexit.register(_safe_rmtree, ephemeral_home)
 
     try:
-        salt = _load_global_salt_or_exit()
+        try:
+            salt = load_global_salt(home=ephemeral_home)
+        except MissingGlobalSaltError as exc:
+            logger.error(str(exc))
+            sys.exit(2)
+
         daemon_dir = ensure_daemon_dir(salt, create_new=create_new)
         cache_dir = ensure_cache_dir(daemon_dir)
 
-        feeds_path, feeds_url, feeds_cached = _resolve_input(
-            feeds_arg, cache_dir, "feeds.opml"
-        )
-        control_path, control_url, control_cached = _resolve_input(
-            control_arg, cache_dir, "control.yaml"
+        control_path, control_url, control_cached = _resolve_control(
+            control_arg, cache_dir
         )
 
         try:
-            feeds, control = _load_inputs(feeds_path, control_path)
-        except (OpmlParseError, ControlFileError) as exc:
-            logger.error("could not load inputs: %s", exc)
+            control = load_control(control_path)
+        except ControlFileError as exc:
+            logger.error("could not load control file: %s", exc)
             sys.exit(2)
 
         ensure_identity_dirs(daemon_dir, control.identities)
-        state = RuntimeState(RuntimeSnapshot(feeds=feeds, control=control))
+        state = RuntimeState(RuntimeSnapshot(control=control))
         logger.info(
-            "startup: %s; daemon dir = %s", _summary(feeds, control), daemon_dir
+            "startup: %s; daemon dir = %s", _summary(control), daemon_dir
         )
 
         stop_event = threading.Event()
 
-        def on_change(key: str) -> None:
-            logger.info("%s file changed, reloading", key)
+        def on_change() -> None:
+            logger.info("control file changed, reloading")
             try:
-                new_feeds, new_control = _load_inputs(feeds_path, control_path)
-            except (OpmlParseError, ControlFileError) as exc:
+                new_control = load_control(control_path)
+            except ControlFileError as exc:
                 logger.error(
-                    "reload failed (%s file invalid): %s — keeping previous state",
-                    key,
+                    "reload failed (control file invalid): %s — keeping previous state",
                     exc,
                 )
                 return
@@ -192,38 +192,31 @@ def run(
                     exc,
                 )
                 return
-            state.swap(RuntimeSnapshot(feeds=new_feeds, control=new_control))
-            logger.info("reload OK: %s", _summary(new_feeds, new_control))
+            state.swap(RuntimeSnapshot(control=new_control))
+            logger.info("reload OK: %s", _summary(new_control))
 
-        watcher = FileWatcher(feeds_path, control_path, on_change)
+        watcher = FileWatcher(control_path, on_change)
         watcher.start()
         logger.info(
-            "watching %s and %s for changes (Ctrl-C to stop)",
-            feeds_path,
-            control_path,
+            "watching %s for changes (Ctrl-C to stop)", control_path
         )
 
-        # Spawn pollers for any URL-typed inputs. Each polls on the configured
-        # interval; when it writes a new body to the cache file, the watchdog
-        # observer fires and the on_change pipeline above runs.
-        interval_seconds = remote_poll_minutes * 60.0
-        if feeds_url and feeds_cached:
-            pollers.append(
-                _build_poller(
-                    "feeds", feeds_url, feeds_cached, stop_event, interval_seconds
-                )
-            )
+        # Spawn a poller if --control was a URL; the poller re-fetches the URL
+        # on the configured interval, and a 200 OK rewrites the cache file,
+        # which the watchdog observer then sees → reload pipeline runs.
         if control_url and control_cached:
-            pollers.append(
-                _build_poller(
-                    "control",
-                    control_url,
-                    control_cached,
-                    stop_event,
-                    interval_seconds,
-                )
+            interval_seconds = remote_poll_minutes * 60.0
+
+            def fetch_control() -> None:
+                fetch_to_cache(control_url, control_cached)
+
+            poller = RemotePoller(
+                name="control",
+                fetch_fn=fetch_control,
+                stop_event=stop_event,
+                interval_seconds=interval_seconds,
             )
-        for poller in pollers:
+            pollers.append(poller)
             poller.start()
 
         def _shutdown(signum, _frame):  # noqa: ANN001 — signal handler signature
@@ -254,32 +247,15 @@ def run(
     except DaemonDirMissingError as exc:
         logger.error(str(exc))
         sys.exit(2)
+    finally:
+        if ephemeral_home is not None:
+            shutil.rmtree(ephemeral_home, ignore_errors=True)
+            logger.info("test mode: removed ephemeral home %s", ephemeral_home)
 
 
-def _build_poller(
-    key: str,
-    url: str,
-    cached: CachedFile,
-    stop_event: threading.Event,
-    interval_seconds: float,
-) -> RemotePoller:
-    def fetch() -> None:
-        fetch_to_cache(url, cached)
-
-    return RemotePoller(
-        name=key,
-        fetch_fn=fetch,
-        stop_event=stop_event,
-        interval_seconds=interval_seconds,
-    )
-
-
-def _load_global_salt_or_exit() -> GlobalSalt:
-    try:
-        return load_global_salt()
-    except MissingGlobalSaltError as exc:
-        logger.error(str(exc))
-        sys.exit(2)
+def _safe_rmtree(path: Path) -> None:
+    """Remove a directory tree, ignoring errors. Suitable for atexit."""
+    shutil.rmtree(path, ignore_errors=True)
 
 
 if __name__ == "__main__":

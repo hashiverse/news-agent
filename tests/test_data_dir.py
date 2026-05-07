@@ -23,15 +23,13 @@ def _make_salt(tmp_path: Path) -> GlobalSalt:
     return GlobalSalt(raw_value="x" * 64, daemon_dir=tmp_path / "daemon")
 
 
-def _make_identity(name: str, salt: str) -> IdentityConfig:
+def _make_identity(nickname: str, salt: str) -> IdentityConfig:
     return IdentityConfig(
-        name=name,
         salt=salt,
-        description="d",
-        nickname="n",
+        nickname=nickname,
         status="s",
         max_posts_per_day=1,
-        include_selectors=("/topic/news/*",),
+        sources=("https://example.com/rss.xml",),
     )
 
 
@@ -79,7 +77,11 @@ def test_ensure_identity_dirs_creates_per_identity_subdirs(tmp_path):
         _make_identity("b", LONG_SALT_B),
     ]
     result = ensure_identity_dirs(salt.daemon_dir, identities)
-    assert [r.identity_name for r in result] == ["a", "b"]
+    # The label embeds the nickname plus a salt prefix.
+    assert all("a" in r.identity_label or "b" in r.identity_label for r in result)
+    assert [LONG_SALT_A in r.identity_label or LONG_SALT_A[:8] in r.identity_label for r in result] == [True, False]
+    assert result[0].path.name == LONG_SALT_A
+    assert result[1].path.name == LONG_SALT_B
     for ident_dir in result:
         assert ident_dir.path.is_dir()
         assert ident_dir.path.parent == salt.daemon_dir

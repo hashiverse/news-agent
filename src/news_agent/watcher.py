@@ -1,9 +1,8 @@
-"""watchdog wrapper that fires a debounced reload callback when either of two
-watched files changes on disk.
+"""watchdog wrapper that fires a debounced reload callback when the control
+file changes on disk.
 
-Each file is identified by a key (``"feeds"`` or ``"control"``) so the callback
-can decide what to do per file. Multiple events that arrive within
-``debounce_seconds`` of each other are coalesced into a single callback per key.
+Multiple events that arrive within ``debounce_seconds`` of each other are
+coalesced into a single callback.
 """
 
 from __future__ import annotations
@@ -27,12 +26,10 @@ class _PerFileHandler(FileSystemEventHandler):
     def __init__(
         self,
         watched_path: Path,
-        key: str,
-        callback: Callable[[str], None],
+        callback: Callable[[], None],
         debounce_seconds: float,
     ) -> None:
         self._watched_path = watched_path.resolve()
-        self._key = key
         self._callback = callback
         self._debounce_seconds = debounce_seconds
         self._lock = threading.Lock()
@@ -57,9 +54,9 @@ class _PerFileHandler(FileSystemEventHandler):
         with self._lock:
             self._pending_timer = None
         try:
-            self._callback(self._key)
+            self._callback()
         except Exception:  # noqa: BLE001 — keep the watcher thread alive.
-            logger.exception("reload callback for %r raised", self._key)
+            logger.exception("reload callback raised")
 
     def on_modified(self, event: FileSystemEvent) -> None:
         if event.is_directory:
@@ -84,48 +81,28 @@ class _PerFileHandler(FileSystemEventHandler):
 
 
 class FileWatcher:
-    """Watches the feeds and control files; fires a debounced reload callback.
+    """Watches one file; fires a debounced reload callback on every change.
 
     Usage::
 
-        watcher = FileWatcher(feeds_path, control_path, on_change)
+        watcher = FileWatcher(control_path, on_change)
         watcher.start()
         ...
         watcher.stop()
-
-    The callback is invoked on a background watchdog thread with the key of the
-    file that changed (``"feeds"`` or ``"control"``).
     """
 
     def __init__(
         self,
-        feeds_path: Path,
-        control_path: Path,
-        on_change: Callable[[str], None],
+        path: Path,
+        on_change: Callable[[], None],
         debounce_seconds: float = DEFAULT_DEBOUNCE_SECONDS,
     ) -> None:
-        self._on_change = on_change
         self._observer = Observer()
-
-        feeds_handler = _PerFileHandler(
-            feeds_path, "feeds", on_change, debounce_seconds
-        )
-        control_handler = _PerFileHandler(
-            control_path, "control", on_change, debounce_seconds
-        )
-
-        # Watchdog watches directories; we filter to specific files inside the handler.
+        handler = _PerFileHandler(path, on_change, debounce_seconds)
+        # Watchdog watches directories; the handler filters to the specific file.
         self._observer.schedule(
-            feeds_handler, str(feeds_path.resolve().parent), recursive=False
+            handler, str(path.resolve().parent), recursive=False
         )
-        if control_path.resolve().parent != feeds_path.resolve().parent:
-            self._observer.schedule(
-                control_handler, str(control_path.resolve().parent), recursive=False
-            )
-        else:
-            self._observer.schedule(
-                control_handler, str(control_path.resolve().parent), recursive=False
-            )
 
     def start(self) -> None:
         self._observer.start()

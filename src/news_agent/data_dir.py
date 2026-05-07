@@ -29,7 +29,7 @@ class DaemonDirMissingError(RuntimeError):
 class IdentityDir:
     """A per-identity directory under the daemon root."""
 
-    identity_name: str
+    identity_label: str    # for logs — built from the identity's IdentityConfig.log_label
     path: Path
 
 
@@ -95,7 +95,9 @@ def ensure_identity_dirs(
         else:
             path.mkdir(parents=True, exist_ok=False)
             logger.info(
-                "created identity directory for %r at %s", identity.name, path
+                "created identity directory for %s at %s",
+                identity.log_label,
+                path,
             )
-        result.append(IdentityDir(identity_name=identity.name, path=path))
+        result.append(IdentityDir(identity_label=identity.log_label, path=path))
     return result

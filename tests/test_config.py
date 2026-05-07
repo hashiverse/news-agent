@@ -11,6 +11,9 @@ from news_agent.config import ControlFileError, IdentityConfig, load_control
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+SALT_A = "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
+SALT_B = "c3a7e2f1b9d4a8e6c2f5d1b8e4a7c3f6d2b9e5a8c1f4d7b3e9a6c2f5d8b1e4c7"
+
 
 def _write(path: Path, content: str) -> Path:
     path.write_text(content, encoding="utf-8")
@@ -20,89 +23,147 @@ def _write(path: Path, content: str) -> Path:
 def test_load_minimal_yields_two_identities():
     config = load_control(FIXTURES / "control_minimal.yaml")
     assert len(config.identities) == 2
-    names = [i.name for i in config.identities]
-    assert names == ["bbc-mirror", "science-mirror"]
+    nicknames = [i.nickname for i in config.identities]
+    assert nicknames == ["BBC Mirror", "Science Daily Mirror"]
+
+
+def test_sources_are_preserved():
+    config = load_control(FIXTURES / "control_minimal.yaml")
+    bbc = next(i for i in config.identities if i.nickname == "BBC Mirror")
+    assert bbc.sources == (
+        "https://feeds.bbci.co.uk/news/world/africa/rss.xml",
+        "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+    )
 
 
 def test_defaults_applied_when_omitted():
     config = load_control(FIXTURES / "control_minimal.yaml")
-    science = next(i for i in config.identities if i.name == "science-mirror")
+    science = next(i for i in config.identities if i.nickname == "Science Daily Mirror")
     assert science.enabled is True
-    assert science.exclude_selectors == ()
-    assert science.exclude_urls == ()
     assert science.selfie is None
+
+
+def test_log_label_includes_nickname_and_salt_prefix():
+    config = load_control(FIXTURES / "control_minimal.yaml")
+    bbc = next(i for i in config.identities if i.nickname == "BBC Mirror")
+    label = bbc.log_label
+    assert "BBC Mirror" in label
+    assert SALT_A[:8] in label
 
 
 def test_short_salt_is_skipped_with_warning(caplog):
     with caplog.at_level(logging.WARNING):
         config = load_control(FIXTURES / "control_invalid_salt.yaml")
-    names = [i.name for i in config.identities]
-    assert names == ["valid-ident"]
-    assert any("short-salt-ident" in record.message for record in caplog.records)
+    assert len(config.identities) == 1
+    assert config.identities[0].nickname == "Valid"
+    # Friendly-cranky log line uses the nickname of the rejected identity.
+    assert any("Short Salt" in record.message for record in caplog.records)
     assert any("salt is too short" in record.message for record in caplog.records)
 
 
 def test_missing_required_field_skips_identity(tmp_path, caplog):
-    yaml_text = """
+    yaml_text = f"""
 identities:
-  - name: missing-status
-    salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
-    description: "no status field"
-    nickname: "x"
+  - salt: "{SALT_A}"
+    nickname: "missing status"
     max_posts_per_day: 1
-    include_selectors:
-      - /topic/news/*
-  - name: ok
-    salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
-    description: "fine"
+    sources: ["https://example.com/a"]
+  - salt: "{SALT_B}"
     nickname: "ok"
     status: "ok"
     max_posts_per_day: 1
-    include_selectors:
-      - /topic/news/*
+    sources: ["https://example.com/b"]
 """
     path = _write(tmp_path / "c.yaml", yaml_text)
     with caplog.at_level(logging.WARNING):
         config = load_control(path)
-    assert [i.name for i in config.identities] == ["ok"]
-    assert any("missing-status" in record.message for record in caplog.records)
+    nicknames = [i.nickname for i in config.identities]
+    assert nicknames == ["ok"]
+    assert any(
+        "missing or empty 'status' field" in record.message for record in caplog.records
+    )
 
 
-def test_empty_include_selectors_skips_identity(tmp_path):
-    yaml_text = """
+def test_missing_sources_skips_identity(tmp_path, caplog):
+    yaml_text = f"""
 identities:
-  - name: empty-selectors
-    salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
-    description: "x"
-    nickname: "x"
+  - salt: "{SALT_A}"
+    nickname: "no sources"
     status: "x"
     max_posts_per_day: 1
-    include_selectors: []
+"""
+    with caplog.at_level(logging.WARNING):
+        config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities == ()
+    assert any("'sources' is required" in record.message for record in caplog.records)
+
+
+def test_empty_sources_skips_identity(tmp_path, caplog):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "empty sources"
+    status: "x"
+    max_posts_per_day: 1
+    sources: []
+"""
+    with caplog.at_level(logging.WARNING):
+        config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities == ()
+    assert any("'sources' is required" in record.message for record in caplog.records)
+
+
+def test_non_string_source_skips_identity(tmp_path, caplog):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "bad-sources"
+    status: "x"
+    max_posts_per_day: 1
+    sources:
+      - 42
+"""
+    with caplog.at_level(logging.WARNING):
+        config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities == ()
+    assert any("contains non-string entry" in record.message for record in caplog.records)
+
+
+def test_duplicate_salt_raises(tmp_path):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "first"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+  - salt: "{SALT_A}"
+    nickname: "second-with-same-salt"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/b"]
+"""
+    with pytest.raises(ControlFileError, match="duplicate salt"):
+        load_control(_write(tmp_path / "c.yaml", yaml_text))
+
+
+def test_duplicate_nickname_is_allowed(tmp_path):
+    """Two identities can share a nickname; the salt is what disambiguates."""
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "Mirror"
+    status: "first"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+  - salt: "{SALT_B}"
+    nickname: "Mirror"
+    status: "second"
+    max_posts_per_day: 1
+    sources: ["https://example.com/b"]
 """
     config = load_control(_write(tmp_path / "c.yaml", yaml_text))
-    assert config.identities == ()
-
-
-def test_duplicate_identity_name_raises(tmp_path):
-    yaml_text = """
-identities:
-  - name: dupe
-    salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
-    description: "x"
-    nickname: "x"
-    status: "x"
-    max_posts_per_day: 1
-    include_selectors: ["/topic/news/*"]
-  - name: dupe
-    salt: "c3a7e2f1b9d4a8e6c2f5d1b8e4a7c3f6d2b9e5a8c1f4d7b3e9a6c2f5d8b1e4c7"
-    description: "x"
-    nickname: "x"
-    status: "x"
-    max_posts_per_day: 1
-    include_selectors: ["/topic/news/*"]
-"""
-    with pytest.raises(ControlFileError, match="duplicate identity name"):
-        load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert len(config.identities) == 2
 
 
 def test_malformed_yaml_raises(tmp_path):
@@ -124,16 +185,14 @@ def test_empty_yaml_yields_empty_config(tmp_path):
 
 
 def test_enabled_false_is_preserved(tmp_path):
-    yaml_text = """
+    yaml_text = f"""
 identities:
-  - name: paused
-    salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
-    description: "x"
-    nickname: "x"
+  - salt: "{SALT_A}"
+    nickname: "paused"
     status: "x"
     enabled: false
     max_posts_per_day: 1
-    include_selectors: ["/topic/news/*"]
+    sources: ["https://example.com/a"]
 """
     config = load_control(_write(tmp_path / "c.yaml", yaml_text))
     assert config.identities[0].enabled is False
@@ -143,31 +202,101 @@ def test_selfie_data_url_is_passed_through(tmp_path):
     selfie_url = "data:image/png;base64,iVBORw0KGgo="
     yaml_text = f"""
 identities:
-  - name: with-selfie
-    salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
-    description: "x"
-    nickname: "x"
+  - salt: "{SALT_A}"
+    nickname: "with selfie"
     status: "x"
     selfie: "{selfie_url}"
     max_posts_per_day: 1
-    include_selectors: ["/topic/news/*"]
+    sources: ["https://example.com/a"]
 """
     config = load_control(_write(tmp_path / "c.yaml", yaml_text))
     assert config.identities[0].selfie == selfie_url
 
 
 def test_negative_max_posts_per_day_skipped(tmp_path, caplog):
-    yaml_text = """
+    yaml_text = f"""
 identities:
-  - name: bad-cap
-    salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
-    description: "x"
-    nickname: "x"
+  - salt: "{SALT_A}"
+    nickname: "bad cap"
     status: "x"
     max_posts_per_day: -3
-    include_selectors: ["/topic/news/*"]
+    sources: ["https://example.com/a"]
 """
     with caplog.at_level(logging.WARNING):
         config = load_control(_write(tmp_path / "c.yaml", yaml_text))
     assert config.identities == ()
     assert any("max_posts_per_day" in record.message for record in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Cross-identity duplicate-source warning
+# ---------------------------------------------------------------------------
+
+
+def test_duplicate_source_across_identities_warns(tmp_path, caplog):
+    shared = "https://example.com/shared.xml"
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "alpha"
+    status: "x"
+    max_posts_per_day: 1
+    sources:
+      - {shared}
+      - https://example.com/alpha-only.xml
+  - salt: "{SALT_B}"
+    nickname: "beta"
+    status: "x"
+    max_posts_per_day: 1
+    sources:
+      - {shared}
+"""
+    with caplog.at_level(logging.WARNING):
+        config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert len(config.identities) == 2
+    matching = [
+        record.message for record in caplog.records
+        if shared in record.message and "appears in" in record.message
+    ]
+    assert matching, f"expected duplicate-source warning, got: {[r.message for r in caplog.records]}"
+    assert any("alpha" in m and "beta" in m for m in matching)
+
+
+def test_unique_sources_emit_no_duplicate_warning(tmp_path, caplog):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "alpha"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+  - salt: "{SALT_B}"
+    nickname: "beta"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/b"]
+"""
+    with caplog.at_level(logging.WARNING):
+        load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert not any("appears in" in r.message for r in caplog.records)
+
+
+def test_within_identity_repeated_source_does_not_trigger_cross_warning(tmp_path, caplog):
+    """One identity listing the same source twice is not 'cross-identity' duplication."""
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "alpha"
+    status: "x"
+    max_posts_per_day: 1
+    sources:
+      - https://example.com/a
+      - https://example.com/a
+"""
+    with caplog.at_level(logging.WARNING):
+        config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    # Identity is loaded with both copies preserved (we don't dedupe within an identity).
+    assert config.identities[0].sources.count("https://example.com/a") == 2
+    # No cross-identity duplicate warning fires (only one identity holds it).
+    cross_warns = [r.message for r in caplog.records if "appears in" in r.message]
+    assert cross_warns == []
