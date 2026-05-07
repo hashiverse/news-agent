@@ -2,11 +2,11 @@
 
 For a given identity, this module either:
 
-- loads the identity's hashiverse client from disk via the cached public key
+- loads the identity's hashiverse client from disk via the cached client_id
   (fast path — no argon2), or
 - runs argon2 once on the (global, local) salt pair, hands the derived
   keyphrase to ``HashiverseClient.create_from_keyphrase``, then writes the
-  resulting public key to ``<identity_dir>/public_key.hex`` for next time.
+  resulting client_id to ``<identity_dir>/client_id.hex`` for next time.
 
 The hashiverse client is created with ``passphrase=NEWS_AGENT_GLOBAL_SALT``
 so the on-disk key locker is encrypted under the same secret that drives
@@ -28,7 +28,7 @@ from news_agent.keyphrase import derive_keyphrase
 
 logger = logging.getLogger(__name__)
 
-PUBLIC_KEY_FILENAME = "public_key.hex"
+CLIENT_ID_FILENAME = "client_id.hex"
 
 
 class _ClientFactory(Protocol):
@@ -49,7 +49,7 @@ class _ClientFactory(Protocol):
 
     @staticmethod
     def create_from_stored_key(
-        key_public: str,
+        client_id_hex: str,
         data_dir: str,
         passphrase: str = "",
         bootstrap_addresses: list[str] | None = None,
@@ -67,29 +67,29 @@ def start_hashiverse_client_for_identity(
 ) -> Any:
     """Bring up one identity's hashiverse client.
 
-    On first run for this identity (no cached public key on disk), runs argon2
+    On first run for this identity (no cached client_id on disk), runs argon2
     to derive the keyphrase, builds a fresh client, and persists the resulting
-    public key. On subsequent runs, loads the cached public key and uses the
+    client_id. On subsequent runs, loads the cached client_id and uses the
     stored-key constructor — no argon2.
 
     The ``client_factory`` and ``derive_fn`` parameters exist so tests can
     substitute fakes without mocking module-level imports.
     """
-    public_key_path = identity_dir / PUBLIC_KEY_FILENAME
+    client_id_path = identity_dir / CLIENT_ID_FILENAME
 
-    if public_key_path.exists():
-        public_key = public_key_path.read_text(encoding="utf-8").strip()
-        if not public_key:
+    if client_id_path.exists():
+        client_id = client_id_path.read_text(encoding="utf-8").strip()
+        if not client_id:
             raise RuntimeError(
-                f"cached public key file at {public_key_path} is empty; "
+                f"cached client_id file at {client_id_path} is empty; "
                 f"delete it to force re-derivation"
             )
         logger.info(
-            "loading hashiverse client for %s from cached public key (no argon2)",
+            "loading hashiverse client for %s from cached client_id (no argon2)",
             identity.log_label,
         )
         return client_factory.create_from_stored_key(
-            key_public=public_key,
+            client_id_hex=client_id,
             data_dir=str(identity_dir),
             passphrase=global_salt,
             bootstrap_addresses=bootstrap_addresses,
@@ -113,10 +113,10 @@ def start_hashiverse_client_for_identity(
         bootstrap_addresses=bootstrap_addresses,
     )
 
-    public_key = client.client_id
-    _atomic_write_text(public_key_path, public_key)
+    client_id = client.client_id
+    _atomic_write_text(client_id_path, client_id)
     logger.info(
-        "persisted public key for %s to %s", identity.log_label, public_key_path
+        "persisted client_id for %s to %s", identity.log_label, client_id_path
     )
     return client
 
