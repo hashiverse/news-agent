@@ -129,23 +129,35 @@ def main() -> None:
     "--test",
     "test_mode",
     is_flag=True,
-    help="Run with an ephemeral home directory created in a temp path; deleted on exit. Implies --create-new. Useful for smoke tests so they don't leave debris in ~/.news-agent.",
+    help="Run with an ephemeral home directory created in a temp path; deleted on exit. Implies --create-new and runs in dry-run mode. Mutually exclusive with --production. Useful for smoke tests so they don't leave debris in ~/.news-agent.",
 )
 @click.option(
-    "--dry-run",
-    "dry_run",
+    "--production",
+    "production",
     is_flag=True,
-    help="Don't actually post to hashiverse — log what would have been posted instead. Dry-run posts ARE recorded in the posts-history table (with is_dry_run=1) so the scheduler still respects per-identity caps and cross-identity dedupe.",
+    help="Post for real to hashiverse. Without this flag, the daemon runs in dry-run mode — logging what would have been posted instead. Dry-run posts ARE recorded in the posts-history table (with is_dry_run=1) so the scheduler still respects per-identity caps and cross-identity dedupe. Mutually exclusive with --test.",
 )
 def run(
     control_arg: str,
     create_new: bool,
     remote_poll_minutes: int,
     test_mode: bool,
-    dry_run: bool,
+    production: bool,
 ) -> None:
     """Start the daemon. Watches the control file for changes and reloads in place."""
     _configure_logging()
+
+    # Mutex: --test always runs in dry-run; --production opts in to real posts.
+    # Combining them is incoherent — fail fast rather than silently picking one.
+    if test_mode and production:
+        logger.error(
+            "--test and --production are mutually exclusive; refusing to start"
+        )
+        sys.exit(2)
+
+    # Dry-run is the default. Posting only happens when the operator explicitly
+    # opts in with --production.
+    dry_run = not production
 
     pollers: list[RemotePoller] = []
     watcher: FileWatcher | None = None
@@ -153,7 +165,8 @@ def run(
 
     # --test runs cheap argon2 (~50 ms/identity) instead of production
     # parameters (~5 s/identity). The cheap params are safe here because
-    # --test also implies an ephemeral home dir + --dry-run.
+    # --test implies an ephemeral home dir and dry-run mode (the mutex
+    # check above ruled out --production).
     derive_fn: Callable[[str, str], str] = (
         derive_keyphrase_cheap if test_mode else derive_keyphrase
     )
@@ -162,16 +175,18 @@ def run(
         ephemeral_home = Path(tempfile.mkdtemp(prefix="news-agent-test-"))
         logger.info("test mode: using ephemeral home directory at %s", ephemeral_home)
         create_new = True  # the directory definitely doesn't exist yet
-        # --test forces --dry-run. The whole point of test mode is "smoke run
-        # without consequences" — accidentally posting to the live network
-        # from a test invocation would defeat the purpose.
-        if not dry_run:
-            logger.info("test mode: forcing --dry-run (no real posts will be made)")
-        dry_run = True
         # atexit registration is a belt-and-braces: it runs on normal exit,
         # SystemExit, and unhandled exceptions, even if the outer finally block
         # below didn't get a chance to run (e.g. signal-killed mid-syscall).
         atexit.register(_safe_rmtree, ephemeral_home)
+
+    if dry_run:
+        logger.info(
+            "dry-run mode: nothing will be posted to the network "
+            "(pass --production to post for real)"
+        )
+    else:
+        logger.info("PRODUCTION mode: real posts will be made to hashiverse")
 
     try:
         try:

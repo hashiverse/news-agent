@@ -349,19 +349,28 @@ class _NoOpWatcher:
         pass
 
 
-def _stub_cli_run_side_effects(monkeypatch, *, captured_derive_fns: list) -> None:
+def _stub_cli_run_side_effects(
+    monkeypatch,
+    *,
+    captured_derive_fns: list,
+    captured_run_loop_kwargs: list | None = None,
+) -> None:
     """Stub the side-effecting parts of cli.run so a CliRunner invocation
     completes synchronously without touching the network or main loop.
 
-    Leaves real: argv parsing, derive_fn selection, the call to
-    _start_clients_for_identities. That's the surface this fixture is testing.
+    Leaves real: argv parsing, derive_fn selection, dry-run resolution, the
+    call to _start_clients_for_identities. That's the surface under test.
     """
     def capturing_start(identities, identity_dirs, global_salt, *, derive_fn):
         captured_derive_fns.append(derive_fn)
         return {}
 
+    def capturing_run_loop(**kwargs):
+        if captured_run_loop_kwargs is not None:
+            captured_run_loop_kwargs.append(kwargs)
+
     monkeypatch.setattr(cli, "_start_clients_for_identities", capturing_start)
-    monkeypatch.setattr(cli, "run_loop", lambda **_: None)
+    monkeypatch.setattr(cli, "run_loop", capturing_run_loop)
     monkeypatch.setattr(cli, "FileWatcher", _NoOpWatcher)
     monkeypatch.setenv("NEWS_AGENT_GLOBAL_SALT", "z" * 64)
 
@@ -399,3 +408,98 @@ def test_run_without_test_mode_uses_production_derive_fn(monkeypatch, tmp_path):
 
     assert result.exit_code == 0, result.output
     assert captured == [derive_keyphrase]
+
+
+# ---------------------------------------------------------------------------
+# Dry-run is the default; --production opts in to real posts; --test/--production are mutex.
+
+
+def test_run_default_runs_in_dry_run_mode(monkeypatch, tmp_path):
+    """No flags → dry_run=True is propagated to run_loop."""
+    derive_fns: list = []
+    run_loop_kwargs: list = []
+    _stub_cli_run_side_effects(
+        monkeypatch,
+        captured_derive_fns=derive_fns,
+        captured_run_loop_kwargs=run_loop_kwargs,
+    )
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    control_path = tmp_path / "control.yaml"
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+
+    result = CliRunner().invoke(
+        cli.main, ["run", "--control", str(control_path), "--create-new"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(run_loop_kwargs) == 1
+    assert run_loop_kwargs[0]["dry_run"] is True
+
+
+def test_run_with_production_flag_disables_dry_run(monkeypatch, tmp_path):
+    """--production → dry_run=False is propagated to run_loop."""
+    derive_fns: list = []
+    run_loop_kwargs: list = []
+    _stub_cli_run_side_effects(
+        monkeypatch,
+        captured_derive_fns=derive_fns,
+        captured_run_loop_kwargs=run_loop_kwargs,
+    )
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    control_path = tmp_path / "control.yaml"
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["run", "--control", str(control_path), "--create-new", "--production"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert run_loop_kwargs[0]["dry_run"] is False
+
+
+def test_run_test_and_production_together_exits_nonzero(monkeypatch, tmp_path):
+    """--test and --production are incoherent; the daemon must refuse to start."""
+    derive_fns: list = []
+    run_loop_kwargs: list = []
+    _stub_cli_run_side_effects(
+        monkeypatch,
+        captured_derive_fns=derive_fns,
+        captured_run_loop_kwargs=run_loop_kwargs,
+    )
+
+    control_path = tmp_path / "control.yaml"
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["run", "--control", str(control_path), "--test", "--production"],
+    )
+
+    assert result.exit_code != 0
+    # Mutex check fires before any client/run-loop work happens.
+    assert derive_fns == []
+    assert run_loop_kwargs == []
+
+
+def test_run_with_test_mode_runs_in_dry_run(monkeypatch, tmp_path):
+    """--test alone → dry_run=True propagates (test mode forces dry-run)."""
+    derive_fns: list = []
+    run_loop_kwargs: list = []
+    _stub_cli_run_side_effects(
+        monkeypatch,
+        captured_derive_fns=derive_fns,
+        captured_run_loop_kwargs=run_loop_kwargs,
+    )
+
+    control_path = tmp_path / "control.yaml"
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+
+    result = CliRunner().invoke(
+        cli.main, ["run", "--control", str(control_path), "--test"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert run_loop_kwargs[0]["dry_run"] is True

@@ -29,12 +29,14 @@ pip install -e ".[test]"
 ```powershell
 .\.venv\Scripts\Activate.ps1
 $env:NEWS_AGENT_GLOBAL_SALT = "<at-least-32-cryptographically-random-chars>"
-news-agent run --control example/control.yaml --test --dry-run
+news-agent run --control example/control.yaml --test
 ```
 
-`--test` uses an ephemeral home directory under the system temp dir (auto-deleted on exit) and **forces `--dry-run`** so smoke runs never accidentally post to hashiverse.
+**Dry-run is the default.** Without `--production`, the daemon logs `[DRY-RUN] would post: ...` lines instead of actually calling the network. Dry-run posts ARE recorded in the SQLite history (with `is_dry_run=1`) so the scheduler still respects per-identity caps and cross-identity dedupe.
 
-`--dry-run` logs `[DRY-RUN] would post: ...` lines instead of actually calling the network. Dry-run posts ARE recorded in the SQLite history (with `is_dry_run=1`) so the scheduler still respects per-identity caps and cross-identity dedupe.
+`--test` uses an ephemeral home directory under the system temp dir (auto-deleted on exit) and is **mutually exclusive with `--production`** — passing both refuses to start. Smoke runs therefore can't accidentally post to hashiverse.
+
+`--production` is the explicit opt-in for posting for real. The daemon logs `PRODUCTION mode: real posts will be made to hashiverse` at startup so the operator sees what they got.
 
 ### Running the tests
 
@@ -142,8 +144,8 @@ news-agent run [OPTIONS]
 | `--control PATH-or-URL` | required | YAML control file. Local path OR HTTPS URL. GitHub `blob/` URLs are auto-rewritten to `raw.githubusercontent.com`. |
 | `--create-new` | flag | Required if the per-daemon directory doesn't already exist (typo guard for `NEWS_AGENT_GLOBAL_SALT`). |
 | `--remote-poll-minutes INT` | default 60 | When `--control` is a URL, how often to re-fetch it. Ignored for local-path control files. |
-| `--test` | flag | Use an ephemeral home dir (auto-deleted on exit), implies `--create-new`, **forces `--dry-run`**. |
-| `--dry-run` | flag | Log what would have been posted instead of actually posting. Dry-run posts still hit the SQLite history. |
+| `--test` | flag | Use an ephemeral home dir (auto-deleted on exit), implies `--create-new`, runs in dry-run with cheap argon2. Mutually exclusive with `--production`. |
+| `--production` | flag | Post for real to hashiverse. Without this flag, dry-run is the default — logs what would have been posted instead. Mutually exclusive with `--test`. |
 
 The required env var is `NEWS_AGENT_GLOBAL_SALT`. Missing → daemon refuses to start. Below 32 chars → friendly-cranky warning at startup, daemon continues running.
 
