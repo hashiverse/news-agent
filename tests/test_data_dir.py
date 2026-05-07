@@ -9,6 +9,7 @@ import pytest
 from news_agent.config import IdentityConfig
 from news_agent.data_dir import (
     DaemonDirMissingError,
+    ensure_cache_dir,
     ensure_daemon_dir,
     ensure_identity_dirs,
 )
@@ -105,3 +106,15 @@ def test_identity_path_collision_with_file_raises(tmp_path):
         ensure_identity_dirs(
             salt.daemon_dir, [_make_identity("a", LONG_SALT_A)]
         )
+
+
+def test_ensure_cache_dir_creates_and_is_idempotent(tmp_path):
+    salt = _make_salt(tmp_path)
+    salt.daemon_dir.mkdir()
+    cache = ensure_cache_dir(salt.daemon_dir)
+    assert cache == salt.daemon_dir / "cache"
+    assert cache.is_dir()
+    # Drop a file inside; second call must not wipe it.
+    (cache / "existing").write_text("kept")
+    ensure_cache_dir(salt.daemon_dir)
+    assert (cache / "existing").read_text() == "kept"

@@ -65,6 +65,17 @@ def ensure_daemon_dir(salt: GlobalSalt, *, create_new: bool) -> Path:
     return salt.daemon_dir
 
 
+def ensure_cache_dir(daemon_dir: Path) -> Path:
+    """Create (idempotently) the cache subdirectory under the daemon directory.
+
+    Used to hold remote-fetched feed/control file content and their meta
+    sidecars when ``--feeds`` or ``--control`` is an HTTPS URL.
+    """
+    cache_dir = daemon_dir / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
 def ensure_identity_dirs(
     daemon_dir: Path, identities: Iterable[IdentityConfig]
 ) -> list[IdentityDir]:
