@@ -37,6 +37,16 @@ from news_agent.state_db import open_state_db
 # ---------------------------------------------------------------------------
 
 
+class _FakePreview:
+    """Stand-in for hashiverse_client.UrlPreview."""
+
+    def __init__(self, url: str = "", title: str = "Mock title", description: str = "", image_url: str = "") -> None:
+        self.url = url
+        self.title = title
+        self.description = description
+        self.image_url = image_url
+
+
 class _FakeClient:
     """No-op stand-in for the real HashiverseClient."""
 
@@ -44,8 +54,11 @@ class _FakeClient:
         self.client_id = client_id
         self.posted: list[str] = []
 
-    def post_with_preprocessing(self, text: str) -> None:
-        self.posted.append(text)
+    def fetch_url_preview(self, url: str) -> _FakePreview:
+        return _FakePreview(url=url)
+
+    def post_without_preprocessing(self, html_body: str) -> None:
+        self.posted.append(html_body)
 
 
 class _NoJitterRandom(random.Random):
