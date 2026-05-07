@@ -44,6 +44,7 @@ class IdentityConfig:
     sources: tuple[str, ...]
     selfie: str | None = None
     enabled: bool = True
+    hashtags: tuple[str, ...] = ()
 
     @property
     def log_label(self) -> str:
@@ -158,6 +159,16 @@ def _build_identity(raw: Any, index: int) -> IdentityConfig:
     if selfie_raw is not None and not isinstance(selfie_raw, str):
         raise _IdentitySkip(label, "'selfie' must be a string (data URL)")
 
+    hashtags_raw = _coerce_str_list(raw.get("hashtags"), "hashtags", label)
+    # Strip any leading '#' that slipped in — the prefix is added at post time.
+    hashtags_stripped: list[str] = []
+    for tag in hashtags_raw:
+        cleaned = tag.lstrip("#")
+        if not cleaned:
+            raise _IdentitySkip(label, f"hashtags entry {tag!r} is empty after stripping '#'")
+        hashtags_stripped.append(cleaned)
+    hashtags = tuple(hashtags_stripped)
+
     return IdentityConfig(
         salt=salt,
         nickname=nickname,
@@ -166,6 +177,7 @@ def _build_identity(raw: Any, index: int) -> IdentityConfig:
         sources=sources,
         selfie=selfie_raw,
         enabled=enabled_raw,
+        hashtags=hashtags,
     )
 
 

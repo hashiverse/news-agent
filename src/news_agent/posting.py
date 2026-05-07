@@ -54,11 +54,18 @@ logger = logging.getLogger(__name__)
 __all__ = ["UrlPreviewData", "format_post_html", "post_or_dry_run"]
 
 
-def format_post_html(article: Article, preview: UrlPreviewData | None = None) -> str:
+def format_post_html(
+    article: Article,
+    preview: UrlPreviewData | None = None,
+    hashtags: tuple[str, ...] = (),
+) -> str:
     """Build the hashiverse HTML body for an article + optional URL preview.
 
     The body is the article's title (HTML-escaped, newlines → ``<br>``)
-    followed by a rendered preview card (see module docstring for shape).
+    followed by a rendered preview card (see module docstring for shape),
+    optionally followed by a trailing line of ``#tag`` mentions. Hashtag
+    strings come in without the leading ``#`` — we add it here so
+    hashiverse's text-side hashtag detection picks them up.
     """
     if preview is None:
         preview = UrlPreviewData()
@@ -87,7 +94,11 @@ def format_post_html(article: Article, preview: UrlPreviewData | None = None) ->
         image_url=preview.image_url,
     )
 
-    return f"{title_html}<br><br>{card}"
+    body = f"{title_html}<br><br>{card}"
+    if hashtags:
+        tags_html = " ".join(f"#{html.escape(tag, quote=False)}" for tag in hashtags)
+        body = f"{body}<br><br>{tags_html}"
+    return body
 
 
 def _build_url_preview_card(
@@ -190,7 +201,7 @@ def post_or_dry_run(
         hashiverse_post_id: str | None = None
     else:
         preview = _fetch_preview_safely(article.raw_url, identity.log_label)
-        html_body = format_post_html(article, preview)
+        html_body = format_post_html(article, preview, identity.hashtags)
         logger.info(
             "%s posting: %r → %s",
             identity.log_label,

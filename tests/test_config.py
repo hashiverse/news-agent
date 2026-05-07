@@ -213,6 +213,102 @@ identities:
     assert config.identities[0].selfie == selfie_url
 
 
+def test_hashtags_omitted_defaults_to_empty(tmp_path):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "no-tags"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+"""
+    config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities[0].hashtags == ()
+
+
+def test_hashtags_round_trip(tmp_path):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "tagged"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+    hashtags: ["news", "tech"]
+"""
+    config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities[0].hashtags == ("news", "tech")
+
+
+def test_hashtags_leading_hash_is_stripped(tmp_path):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "tagged"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+    hashtags: ["#news", "##tech", "ok"]
+"""
+    config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities[0].hashtags == ("news", "tech", "ok")
+
+
+def test_hashtags_only_hash_chars_skips_identity(tmp_path, caplog):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "bad-tags"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+    hashtags: ["##"]
+"""
+    with caplog.at_level(logging.WARNING):
+        config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities == ()
+    assert any(
+        "empty after stripping '#'" in record.message for record in caplog.records
+    )
+
+
+def test_hashtags_non_list_skips_identity(tmp_path, caplog):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "bad-tags"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+    hashtags: "news"
+"""
+    with caplog.at_level(logging.WARNING):
+        config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities == ()
+    assert any(
+        "hashtags must be a list of strings" in record.message for record in caplog.records
+    )
+
+
+def test_hashtags_non_string_entry_skips_identity(tmp_path, caplog):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "bad-tags"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+    hashtags:
+      - 42
+"""
+    with caplog.at_level(logging.WARNING):
+        config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities == ()
+    assert any(
+        "hashtags contains non-string entry" in record.message for record in caplog.records
+    )
+
+
 def test_negative_max_posts_per_day_skipped(tmp_path, caplog):
     yaml_text = f"""
 identities:

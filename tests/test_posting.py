@@ -173,6 +173,24 @@ def test_format_post_html_html_escapes_special_chars():
     assert 'src="https://img.example/o?a=1&amp;b=2"' in html_body
 
 
+def test_format_post_html_appends_hashtags_when_provided():
+    html_body = format_post_html(_article(), UrlPreviewData(), hashtags=("news", "world"))
+    assert html_body.endswith("<br><br>#news #world")
+
+
+def test_format_post_html_omits_hashtag_section_when_empty():
+    html_body = format_post_html(_article(), UrlPreviewData())
+    # Body ends with the closing </div> of the preview card — no trailing tag block.
+    assert html_body.endswith("</div>")
+    assert "#" not in html_body.split("</div>")[-1]
+
+
+def test_format_post_html_escapes_hashtag_text():
+    html_body = format_post_html(_article(), UrlPreviewData(), hashtags=("a<b", "ok"))
+    assert "#a&lt;b #ok" in html_body
+    assert "#a<b" not in html_body
+
+
 def test_format_post_html_converts_newlines_in_title_to_br():
     article = Article(
         title="Line one\nLine two",
@@ -256,6 +274,29 @@ def test_real_run_calls_client_and_records_history(conn, monkeypatch):
     posts = posts_in_last_24h_for_identity(conn, SALT, 2_000_000)
     assert len(posts) == 1
     assert posts[0].is_dry_run is False
+
+
+def test_real_run_appends_identity_hashtags_to_post_body(conn, monkeypatch):
+    client = _FakeClient()
+    _patch_preview(monkeypatch)
+    identity = IdentityConfig(
+        salt=SALT,
+        nickname="Test",
+        status="x",
+        max_posts_per_day=5,
+        sources=("https://feed.example/rss",),
+        hashtags=("news", "world"),
+    )
+    post_or_dry_run(
+        client=client,
+        article=_article(),
+        identity=identity,
+        conn=conn,
+        dry_run=False,
+        now_unix=2_000_000,
+    )
+    assert len(client.posts) == 1
+    assert client.posts[0].endswith("<br><br>#news #world")
 
 
 def test_real_run_posts_anyway_when_preview_fetch_fails(conn, caplog, monkeypatch):
