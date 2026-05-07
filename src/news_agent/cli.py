@@ -20,9 +20,10 @@ from pathlib import Path
 
 import click
 
-from news_agent.config import ControlConfig, ControlFileError, load_control
+from news_agent.config import ControlConfig, ControlFileError, IdentityConfig, load_control
 from news_agent.data_dir import (
     DaemonDirMissingError,
+    IdentityDir,
     ensure_cache_dir,
     ensure_daemon_dir,
     ensure_identity_dirs,
@@ -31,6 +32,7 @@ from news_agent.global_salt import (
     MissingGlobalSaltError,
     load_global_salt,
 )
+from news_agent.hashiverse_setup import start_hashiverse_client_for_identity
 from news_agent.poller import RemotePoller
 from news_agent.remote_source import (
     CachedFile,
@@ -40,6 +42,7 @@ from news_agent.remote_source import (
     normalize_github_url,
 )
 from news_agent.runtime_state import RuntimeSnapshot, RuntimeState
+from news_agent.state_db import open_state_db
 from news_agent.watcher import FileWatcher
 
 logger = logging.getLogger("news_agent")
@@ -166,34 +169,33 @@ def run(
             logger.error("could not load control file: %s", exc)
             sys.exit(2)
 
-        ensure_identity_dirs(daemon_dir, control.identities)
+        identity_dirs = ensure_identity_dirs(daemon_dir, control.identities)
         state = RuntimeState(RuntimeSnapshot(control=control))
         logger.info(
             "startup: %s; daemon dir = %s", _summary(control), daemon_dir
+        )
+
+        # Open (or create) the daemon-wide SQLite state DB. No schema yet —
+        # tables are added by feature blocks as they land.
+        state_db = open_state_db(daemon_dir)
+
+        # Bring up one hashiverse client per enabled identity. First-run paths
+        # do argon2 (slow); subsequent runs load the cached public key.
+        clients = _start_clients_for_identities(
+            control.identities, identity_dirs, salt.raw_value
         )
 
         stop_event = threading.Event()
 
         def on_change() -> None:
             logger.info("control file changed, reloading")
-            try:
-                new_control = load_control(control_path)
-            except ControlFileError as exc:
-                logger.error(
-                    "reload failed (control file invalid): %s — keeping previous state",
-                    exc,
-                )
-                return
-            try:
-                ensure_identity_dirs(daemon_dir, new_control.identities)
-            except RuntimeError as exc:
-                logger.error(
-                    "reload failed creating identity dirs: %s — keeping previous state",
-                    exc,
-                )
-                return
-            state.swap(RuntimeSnapshot(control=new_control))
-            logger.info("reload OK: %s", _summary(new_control))
+            _reload_state(
+                clients=clients,
+                state=state,
+                control_path=control_path,
+                daemon_dir=daemon_dir,
+                global_salt=salt.raw_value,
+            )
 
         watcher = FileWatcher(control_path, on_change)
         watcher.start()
@@ -243,6 +245,13 @@ def run(
                 poller.stop()
             if watcher is not None:
                 watcher.stop()
+            try:
+                state_db.close()
+            except Exception:  # noqa: BLE001 — best-effort close on shutdown
+                logger.exception("closing state DB")
+            # Drop hashiverse client refs so their internal runtimes can shut
+            # down cleanly.
+            clients.clear()
             logger.info("stopped")
     except DaemonDirMissingError as exc:
         logger.error(str(exc))
@@ -256,6 +265,95 @@ def run(
 def _safe_rmtree(path: Path) -> None:
     """Remove a directory tree, ignoring errors. Suitable for atexit."""
     shutil.rmtree(path, ignore_errors=True)
+
+
+def _reload_state(
+    *,
+    clients: dict[str, object],
+    state: RuntimeState,
+    control_path: Path,
+    daemon_dir: Path,
+    global_salt: str,
+) -> None:
+    """Re-parse the control file and fully rebuild the in-memory state.
+
+    Tear-down-and-rebuild on every reload. No diffing of the existing
+    ``clients`` dict against the new identity set — instead, drop every
+    existing client and re-run the same startup path that was used at
+    daemon boot. Per-identity ``public_key.hex`` caches keep the cost
+    cheap for unchanged identities (no argon2). Brand-new identities pay
+    the argon2 cost; removed/disabled identities have their tokio runtimes
+    released as their refs leave the dict.
+
+    On failure (parse error, identity-dir creation failure), the existing
+    state is left intact and the daemon keeps running with the previous
+    configuration.
+    """
+    try:
+        new_control = load_control(control_path)
+    except ControlFileError as exc:
+        logger.error(
+            "reload failed (control file invalid): %s — keeping previous state",
+            exc,
+        )
+        return
+    try:
+        new_identity_dirs = ensure_identity_dirs(daemon_dir, new_control.identities)
+    except RuntimeError as exc:
+        logger.error(
+            "reload failed creating identity dirs: %s — keeping previous state",
+            exc,
+        )
+        return
+
+    # Tear down all existing clients. The dict is the same one the outer
+    # scope holds, so clearing it here releases tokio runtimes inside the
+    # now-orphaned clients.
+    clients.clear()
+
+    # Rebuild from disk. Cached public keys mean only brand-new identities
+    # pay argon2.
+    new_clients = _start_clients_for_identities(
+        new_control.identities, new_identity_dirs, global_salt
+    )
+    clients.update(new_clients)
+
+    state.swap(RuntimeSnapshot(control=new_control))
+    logger.info("reload OK: %s", _summary(new_control))
+
+
+def _start_clients_for_identities(
+    identities: tuple[IdentityConfig, ...],
+    identity_dirs: list[IdentityDir],
+    global_salt: str,
+) -> dict[str, object]:
+    """Start one hashiverse client per enabled identity.
+
+    Disabled identities are noted in the log and skipped — their data dir
+    already exists, but the daemon won't bring up a client for them. Returns
+    a mapping of ``identity.salt`` to the resulting client.
+    """
+    dirs_by_salt = {d.path.name: d for d in identity_dirs}
+    clients: dict[str, object] = {}
+    for identity in identities:
+        identity_dir = dirs_by_salt[identity.salt]
+        if not identity.enabled:
+            logger.info(
+                "skipping client startup for %s (enabled=false)", identity.log_label
+            )
+            continue
+        client = start_hashiverse_client_for_identity(
+            identity=identity,
+            identity_dir=identity_dir.path,
+            global_salt=global_salt,
+        )
+        clients[identity.salt] = client
+        logger.info(
+            "hashiverse client up for %s: client_id=%s",
+            identity.log_label,
+            client.client_id,
+        )
+    return clients
 
 
 if __name__ == "__main__":
