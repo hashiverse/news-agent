@@ -354,12 +354,14 @@ def _stub_cli_run_side_effects(
     *,
     captured_derive_fns: list,
     captured_run_loop_kwargs: list | None = None,
+    captured_log_bridge_calls: list | None = None,
 ) -> None:
     """Stub the side-effecting parts of cli.run so a CliRunner invocation
     completes synchronously without touching the network or main loop.
 
-    Leaves real: argv parsing, derive_fn selection, dry-run resolution, the
-    call to _start_clients_for_identities. That's the surface under test.
+    Leaves real: argv parsing, derive_fn selection, dry-run resolution,
+    --verbose-hashiverse gating, the call to _start_clients_for_identities.
+    That's the surface under test.
     """
     def capturing_start(identities, identity_dirs, global_salt, *, derive_fn):
         captured_derive_fns.append(derive_fn)
@@ -369,9 +371,16 @@ def _stub_cli_run_side_effects(
         if captured_run_loop_kwargs is not None:
             captured_run_loop_kwargs.append(kwargs)
 
+    def capturing_log_bridge() -> None:
+        if captured_log_bridge_calls is not None:
+            captured_log_bridge_calls.append(True)
+
     monkeypatch.setattr(cli, "_start_clients_for_identities", capturing_start)
     monkeypatch.setattr(cli, "run_loop", capturing_run_loop)
     monkeypatch.setattr(cli, "FileWatcher", _NoOpWatcher)
+    # The Rust→Python log bridge is a process-wide one-shot; pytest invokes
+    # cli.main repeatedly within one process, so stub it out per-test.
+    monkeypatch.setattr(cli, "init_hashiverse_logging", capturing_log_bridge)
     monkeypatch.setenv("NEWS_AGENT_GLOBAL_SALT", "z" * 64)
 
 
@@ -503,3 +512,50 @@ def test_run_with_test_mode_runs_in_dry_run(monkeypatch, tmp_path):
 
     assert result.exit_code == 0, result.output
     assert run_loop_kwargs[0]["dry_run"] is True
+
+
+# ---------------------------------------------------------------------------
+# --verbose-hashiverse gates the Rust→Python log bridge
+
+
+def test_run_without_verbose_hashiverse_skips_log_bridge(monkeypatch, tmp_path):
+    """Default invocation does NOT install the Rust log bridge."""
+    derive_fns: list = []
+    log_bridge_calls: list = []
+    _stub_cli_run_side_effects(
+        monkeypatch,
+        captured_derive_fns=derive_fns,
+        captured_log_bridge_calls=log_bridge_calls,
+    )
+
+    control_path = tmp_path / "control.yaml"
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+
+    result = CliRunner().invoke(
+        cli.main, ["run", "--control", str(control_path), "--test"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert log_bridge_calls == []
+
+
+def test_run_with_verbose_hashiverse_initializes_log_bridge(monkeypatch, tmp_path):
+    """--verbose-hashiverse → init_hashiverse_logging is called once."""
+    derive_fns: list = []
+    log_bridge_calls: list = []
+    _stub_cli_run_side_effects(
+        monkeypatch,
+        captured_derive_fns=derive_fns,
+        captured_log_bridge_calls=log_bridge_calls,
+    )
+
+    control_path = tmp_path / "control.yaml"
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["run", "--control", str(control_path), "--test", "--verbose-hashiverse"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert log_bridge_calls == [True]

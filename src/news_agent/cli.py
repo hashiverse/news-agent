@@ -21,6 +21,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import click
+from hashiverse_client import init_logging as init_hashiverse_logging
 
 from news_agent.config import ControlConfig, ControlFileError, IdentityConfig, load_control
 from news_agent.data_dir import (
@@ -52,12 +53,18 @@ from news_agent.watcher import FileWatcher
 logger = logging.getLogger("news_agent")
 
 
-def _configure_logging() -> None:
+def _configure_logging(*, verbose_hashiverse: bool) -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         stream=sys.stderr,
     )
+    if verbose_hashiverse:
+        # Bridge Rust hashiverse-client `log::*` output into Python's logging.
+        # Process-wide one-shot; logger names on the Python side are the Rust
+        # target (e.g. `hashiverse_lib::client::peer_tracker`). Off by default
+        # because the Rust stack is chatty at trace/debug levels.
+        init_hashiverse_logging()
 
 
 def _summary(control: ControlConfig) -> str:
@@ -137,15 +144,22 @@ def main() -> None:
     is_flag=True,
     help="Post for real to hashiverse. Without this flag, the daemon runs in dry-run mode — logging what would have been posted instead. Dry-run posts ARE recorded in the posts-history table (with is_dry_run=1) so the scheduler still respects per-identity caps and cross-identity dedupe. Mutually exclusive with --test.",
 )
+@click.option(
+    "--verbose-hashiverse",
+    "verbose_hashiverse",
+    is_flag=True,
+    help="Bridge log output from the Rust hashiverse-client into Python's logging. Off by default because the Rust stack is chatty. Once on, lower the Python root logger level to surface DEBUG/TRACE Rust records.",
+)
 def run(
     control_arg: str,
     create_new: bool,
     remote_poll_minutes: int,
     test_mode: bool,
     production: bool,
+    verbose_hashiverse: bool,
 ) -> None:
     """Start the daemon. Watches the control file for changes and reloads in place."""
-    _configure_logging()
+    _configure_logging(verbose_hashiverse=verbose_hashiverse)
 
     # Mutex: --test always runs in dry-run; --production opts in to real posts.
     # Combining them is incoherent — fail fast rather than silently picking one.

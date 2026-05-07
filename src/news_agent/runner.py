@@ -108,14 +108,31 @@ def _one_iteration(
         rng=rng,
     )
     if chosen is None:
+        soonest_t, soonest_identity = scheduled[0]
         logger.info(
-            "no identity has eligible content right now; sleeping %ds",
+            "nothing eligible right now; next scheduled is %s at %s (in %s); will re-check in %ds",
+            soonest_identity.log_label,
+            _format_local_time(soonest_t),
+            _format_duration(soonest_t - now),
             int(NO_ELIGIBLE_POLL_SECONDS),
         )
         stop_event.wait(timeout=NO_ELIGIBLE_POLL_SECONDS)
         return
 
     next_post_time, identity, article = chosen
+
+    seconds_until_post = next_post_time - int(time.time())
+    if seconds_until_post > 1:
+        # Announce the imminent post before sleeping; otherwise the loop is
+        # silent for up to 24h between posts and the operator can't tell what
+        # the daemon is "waiting for".
+        logger.info(
+            "next post: %s → %s at %s (in %s)",
+            identity.log_label,
+            _truncate_title(article.title),
+            _format_local_time(next_post_time),
+            _format_duration(seconds_until_post),
+        )
 
     if not _wait_until(next_post_time, stop_event):
         # Stop event fired during the wait — bail out, the outer loop will exit.
@@ -215,6 +232,37 @@ def _gather_articles_for_identity(
                 source_url,
             )
     return articles
+
+
+def _format_local_time(unix_ts: int) -> str:
+    return time.strftime("%H:%M:%S", time.localtime(unix_ts))
+
+
+def _format_duration(seconds: int) -> str:
+    """Format a non-negative duration as "Xs", "XmYYs", "XhYYm", or "XdYYh".
+
+    Negative inputs clamp to zero (the schedule may have just slipped past now).
+    """
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        m, s = divmod(seconds, 60)
+        return f"{m}m{s:02d}s"
+    if seconds < 86400:
+        h, rem = divmod(seconds, 3600)
+        m = rem // 60
+        return f"{h}h{m:02d}m"
+    d, rem = divmod(seconds, 86400)
+    h = rem // 3600
+    return f"{d}d{h:02d}h"
+
+
+def _truncate_title(title: str, max_len: int = 80) -> str:
+    title = title.strip()
+    if len(title) <= max_len:
+        return title
+    return title[: max_len - 1] + "…"
 
 
 def _wait_until(target_unix: int, stop_event: threading.Event) -> bool:

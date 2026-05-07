@@ -26,3 +26,12 @@ identities:
     sources:
       - https://feeds.bbci.co.uk/news/science_and_environment/rss.xml
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC9-y-6csu5WGm29I7JiwpnA
+
+  - salt: "d3a7e2f1b9d4a8e6c2f5d1b8e4a7c3f6d2b9e5a8c1f4d7b3e9a6c2f5d8b1e4c7"
+    nickname: "Science Daily Mirror 2"
+    status: "Top science stories from public-interest sources."
+    enabled: true
+    max_posts_per_day: 10
+    sources:
+      - https://feeds.bbci.co.uk/news/science_and_environment/rss.xml
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC9-y-6csu5WGm29I7JiwpnA

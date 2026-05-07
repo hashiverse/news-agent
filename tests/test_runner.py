@@ -22,7 +22,12 @@ from news_agent.posts_db import (
     posted_canonical_urls_in_last_24h,
     posts_in_last_24h_for_identity,
 )
-from news_agent.runner import run_loop
+from news_agent.runner import (
+    _format_duration,
+    _format_local_time,
+    _truncate_title,
+    run_loop,
+)
 from news_agent.runtime_state import RuntimeSnapshot, RuntimeState
 from news_agent.state_db import open_state_db
 
@@ -364,3 +369,119 @@ def test_real_run_calls_client_post(conn):
     assert "Real" in client.posted[0]
     posts = posts_in_last_24h_for_identity(conn, SALT_A, int(time.time()) + 60)
     assert posts[0].is_dry_run is False
+
+
+# ---------------------------------------------------------------------------
+# Duration / time formatters
+# ---------------------------------------------------------------------------
+
+
+def test_format_duration_seconds_only():
+    assert _format_duration(0) == "0s"
+    assert _format_duration(7) == "7s"
+    assert _format_duration(59) == "59s"
+
+
+def test_format_duration_minutes_and_seconds():
+    assert _format_duration(60) == "1m00s"
+    assert _format_duration(125) == "2m05s"
+    assert _format_duration(3599) == "59m59s"
+
+
+def test_format_duration_hours_and_minutes():
+    assert _format_duration(3600) == "1h00m"
+    assert _format_duration(3 * 3600 + 7 * 60 + 30) == "3h07m"
+    assert _format_duration(86399) == "23h59m"
+
+
+def test_format_duration_days_and_hours():
+    assert _format_duration(86400) == "1d00h"
+    assert _format_duration(86400 + 5 * 3600 + 30 * 60) == "1d05h"
+
+
+def test_format_duration_clamps_negative_to_zero():
+    """Schedules can occasionally slip past 'now' between compute + log."""
+    assert _format_duration(-1) == "0s"
+    assert _format_duration(-10000) == "0s"
+
+
+def test_format_local_time_round_trips_an_hms_string():
+    # Just confirm the format is HH:MM:SS — the actual value is timezone-dependent.
+    formatted = _format_local_time(int(time.time()))
+    assert len(formatted) == 8
+    assert formatted[2] == ":" and formatted[5] == ":"
+
+
+def test_truncate_title_passes_short_titles_through():
+    assert _truncate_title("short") == "short"
+    assert _truncate_title("  spaces  ") == "spaces"
+
+
+def test_truncate_title_clips_long_titles_with_ellipsis():
+    long_title = "x" * 100
+    out = _truncate_title(long_title, max_len=20)
+    assert len(out) == 20
+    assert out.endswith("…")
+
+
+# ---------------------------------------------------------------------------
+# "Nothing eligible" log line announcing the next-scheduled identity
+# ---------------------------------------------------------------------------
+
+
+def _make_empty_rss() -> bytes:
+    return b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Empty</title>
+    <link>https://example.com/</link>
+    <description>nothing</description>
+  </channel>
+</rss>"""
+
+
+def test_loop_logs_next_scheduled_identity_when_nothing_eligible(conn, caplog):
+    """Empty feed → no eligible article → log announces the soonest scheduled identity."""
+    handler = _make_static_handler(_make_empty_rss())
+    with _running_server(handler) as base:
+        source_url = f"{base}/feed.xml"
+        identity = _identity(SALT_A, "Quietist", source_url)
+        state = RuntimeState(
+            RuntimeSnapshot(control=ControlConfig(identities=(identity,)))
+        )
+        clients: dict[str, object] = {SALT_A: _FakeClient()}
+        stop_event = threading.Event()
+
+        thread = threading.Thread(
+            target=run_loop,
+            kwargs=dict(
+                state=state,
+                clients=clients,
+                conn=conn,
+                stop_event=stop_event,
+                dry_run=True,
+                rng=_NoJitterRandom(),
+            ),
+            daemon=True,
+        )
+        with caplog.at_level("INFO", logger="news_agent.runner"):
+            thread.start()
+            captured = _wait_for(
+                lambda: any(
+                    "nothing eligible right now" in r.getMessage()
+                    for r in caplog.records
+                ),
+                timeout=10.0,
+            )
+            stop_event.set()
+            thread.join(timeout=5)
+
+    assert captured, "expected 'nothing eligible right now' log line"
+    matching = [
+        r.getMessage() for r in caplog.records if "nothing eligible right now" in r.getMessage()
+    ]
+    msg = matching[0]
+    assert "Quietist" in msg
+    assert "next scheduled is" in msg
+    # Format includes a time of day and a duration.
+    assert " at " in msg and " in " in msg

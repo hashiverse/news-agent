@@ -146,6 +146,7 @@ news-agent run [OPTIONS]
 | `--remote-poll-minutes INT` | default 60 | When `--control` is a URL, how often to re-fetch it. Ignored for local-path control files. |
 | `--test` | flag | Use an ephemeral home dir (auto-deleted on exit), implies `--create-new`, runs in dry-run with cheap argon2. Mutually exclusive with `--production`. |
 | `--production` | flag | Post for real to hashiverse. Without this flag, dry-run is the default — logs what would have been posted instead. Mutually exclusive with `--test`. |
+| `--verbose-hashiverse` | flag | Bridge Rust hashiverse-client `log::*` output into Python's logging. Off by default — the Rust stack is chatty. See §11. |
 
 The required env var is `NEWS_AGENT_GLOBAL_SALT`. Missing → daemon refuses to start. Below 32 chars → friendly-cranky warning at startup, daemon continues running.
 
@@ -304,6 +305,8 @@ Salt-too-short warnings have a deliberate friendly-cranky tone:
 > identity 'foo' ignored — salt is too short to be safe (8 chars, want at least 32). if you want, you can use sdjhfskdhhfkj3w2h4kj32h4kj342h…
 
 The random suggestion is a fresh URL-safe-base64 string (cryptographically random, generated via `secrets.token_urlsafe`) — different on every load, so the operator can paste it as-is.
+
+**Rust → Python log bridge.** Off by default; opt in with `--verbose-hashiverse`. When the flag is set, `_configure_logging` calls `hashiverse_client.init_logging()` after `basicConfig`, which installs a `pyo3-log` shim so `log::*` records emitted by `hashiverse-client` (and the rest of the Rust stack underneath it) flow through Python's `logging` module — same handler, same format, same stderr stream. Logger names on the Python side are the Rust target (e.g. `hashiverse_lib::client::peer_tracker`). To surface Rust DEBUG/TRACE output, lower the Python root logger level — no Rust rebuild needed. The bridge is process-wide and one-shot; pytest stubs it via `_stub_cli_run_side_effects` so per-test `cli.run` invocations don't hit the deliberate "logger already set" loud-fail.
 
 ---
 
