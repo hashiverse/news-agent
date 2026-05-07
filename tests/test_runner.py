@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
+from news_agent import posting
 from news_agent.config import ControlConfig, IdentityConfig
 from news_agent.posts_db import (
     posted_canonical_urls_in_last_24h,
@@ -30,6 +31,7 @@ from news_agent.runner import (
 )
 from news_agent.runtime_state import RuntimeSnapshot, RuntimeState
 from news_agent.state_db import open_state_db
+from news_agent.url_preview import UrlPreviewData
 
 
 # ---------------------------------------------------------------------------
@@ -37,28 +39,28 @@ from news_agent.state_db import open_state_db
 # ---------------------------------------------------------------------------
 
 
-class _FakePreview:
-    """Stand-in for hashiverse_client.UrlPreview."""
-
-    def __init__(self, url: str = "", title: str = "Mock title", description: str = "", image_url: str = "") -> None:
-        self.url = url
-        self.title = title
-        self.description = description
-        self.image_url = image_url
-
-
 class _FakeClient:
-    """No-op stand-in for the real HashiverseClient."""
+    """No-op stand-in for the real HashiverseClient. Preview fetching now
+    happens locally in news_agent.url_preview; the ``stub_url_preview`` fixture
+    below patches it to a no-op for these integration tests."""
 
     def __init__(self, client_id: str = "fake-client-id") -> None:
         self.client_id = client_id
         self.posted: list[str] = []
 
-    def fetch_url_preview(self, url: str) -> _FakePreview:
-        return _FakePreview(url=url)
-
     def post_without_preprocessing(self, html_body: str) -> None:
         self.posted.append(html_body)
+
+
+@pytest.fixture(autouse=True)
+def stub_url_preview(monkeypatch):
+    """Replace posting.fetch_url_preview with a no-op for all runner tests.
+
+    The runner doesn't care about preview content — it just needs the post
+    to be constructed and submitted. Without this, every real-run test would
+    hit the network trying to fetch the example.com URLs in test articles.
+    """
+    monkeypatch.setattr(posting, "fetch_url_preview", lambda url: UrlPreviewData())
 
 
 class _NoJitterRandom(random.Random):

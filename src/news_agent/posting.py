@@ -20,11 +20,12 @@ web client's ``build_card_dom`` (`UrlPreviewExtension.ts`):
 The ``plugin-urlpreview-card*`` CSS classes are provided by the consuming
 client at view time, so we just need to use them — no inline styles.
 
-Before posting we ask the hashiverse server for the URL's OpenGraph data via
-``client.fetch_url_preview(url)`` so the card carries a real title /
-description / image. If preview fetch fails the post still goes out — the
-card falls back to article.title with no image/description. We never block
-the post on a flaky preview fetch.
+Before posting we fetch the URL's OpenGraph metadata locally via
+``news_agent.url_preview.fetch_url_preview(url)`` (stdlib urllib + html.parser,
+HTTPS-only, 512 KB cap) — no hashiverse-server round-trip is involved. If
+the fetch fails the post still goes out — the card falls back to
+``article.title`` with no image/description. We never block the post on a
+flaky preview fetch.
 
 In both real and dry-run paths a row is written to the ``posts`` history
 table with ``is_dry_run=0`` or ``=1``. The dedupe set used by the article
@@ -39,30 +40,18 @@ import html
 import logging
 import sqlite3
 import time
-from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
 from news_agent.config import IdentityConfig
 from news_agent.posts_db import record_post
 from news_agent.rss_parser import Article
+from news_agent.url_preview import UrlPreviewData, fetch_url_preview
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True)
-class UrlPreviewData:
-    """OpenGraph fields used to populate a ``<urlpreview>`` element.
-
-    All fields default to "" so callers can construct a no-preview-available
-    fallback. The hashiverse web client treats empty title/description/image
-    as "render a loading state" — which it then async-resolves on its end.
-    """
-
-    url: str = ""
-    title: str = ""
-    description: str = ""
-    image_url: str = ""
+# Re-export so existing `from news_agent.posting import UrlPreviewData` callers keep working.
+__all__ = ["UrlPreviewData", "format_post_html", "post_or_dry_run"]
 
 
 def format_post_html(article: Article, preview: UrlPreviewData | None = None) -> str:
@@ -155,10 +144,10 @@ def _build_url_preview_card(
     return "".join(parts)
 
 
-def _fetch_preview_safely(client: Any, url: str, log_label: str) -> UrlPreviewData:
+def _fetch_preview_safely(url: str, log_label: str) -> UrlPreviewData:
     """Fetch OG data for ``url``. On failure, log a warning and return blanks."""
     try:
-        preview = client.fetch_url_preview(url)
+        return fetch_url_preview(url)
     except Exception as exc:  # noqa: BLE001 — preview failures must not block posting
         logger.warning(
             "%s: fetch_url_preview failed for %s: %s — posting without preview attrs",
@@ -167,12 +156,6 @@ def _fetch_preview_safely(client: Any, url: str, log_label: str) -> UrlPreviewDa
             exc,
         )
         return UrlPreviewData()
-    return UrlPreviewData(
-        url=preview.url,
-        title=preview.title,
-        description=preview.description,
-        image_url=preview.image_url,
-    )
 
 
 def post_or_dry_run(
@@ -206,7 +189,7 @@ def post_or_dry_run(
         )
         hashiverse_post_id: str | None = None
     else:
-        preview = _fetch_preview_safely(client, article.raw_url, identity.log_label)
+        preview = _fetch_preview_safely(article.raw_url, identity.log_label)
         html_body = format_post_html(article, preview)
         logger.info(
             "%s posting: %r → %s",

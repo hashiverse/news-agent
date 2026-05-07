@@ -6,6 +6,7 @@ import logging
 
 import pytest
 
+from news_agent import posting
 from news_agent.config import IdentityConfig
 from news_agent.posting import (
     UrlPreviewData,
@@ -51,33 +52,31 @@ def _article() -> Article:
     )
 
 
-class _FakePreview:
-    """Stand-in for hashiverse_client.UrlPreview — has the four string attrs."""
-
-    def __init__(self, url: str = "", title: str = "", description: str = "", image_url: str = "") -> None:
-        self.url = url
-        self.title = title
-        self.description = description
-        self.image_url = image_url
-
-
 class _FakeClient:
-    """Records post calls and serves a configurable preview. Real hashiverse-client is not invoked."""
+    """Records post calls. Preview fetching now happens locally — see news_agent.url_preview.
 
-    def __init__(self, preview: _FakePreview | None = None, raise_on_preview: Exception | None = None) -> None:
+    Tests that need a controlled preview monkeypatch ``posting.fetch_url_preview``.
+    """
+
+    def __init__(self) -> None:
         self.posts: list[str] = []
-        self.fetched_preview_urls: list[str] = []
-        self._preview = preview if preview is not None else _FakePreview()
-        self._raise_on_preview = raise_on_preview
-
-    def fetch_url_preview(self, url: str) -> _FakePreview:
-        self.fetched_preview_urls.append(url)
-        if self._raise_on_preview is not None:
-            raise self._raise_on_preview
-        return self._preview
 
     def post_without_preprocessing(self, html_body: str) -> None:
         self.posts.append(html_body)
+
+
+def _patch_preview(monkeypatch, *, returns: UrlPreviewData | None = None, raises: Exception | None = None) -> list[str]:
+    """Stub posting.fetch_url_preview. Returns a list that captures URLs it was called with."""
+    captured_urls: list[str] = []
+
+    def stub(url: str) -> UrlPreviewData:
+        captured_urls.append(url)
+        if raises is not None:
+            raise raises
+        return returns if returns is not None else UrlPreviewData()
+
+    monkeypatch.setattr(posting, "fetch_url_preview", stub)
+    return captured_urls
 
 
 # ---------------------------------------------------------------------------
@@ -192,8 +191,9 @@ def test_format_post_html_converts_newlines_in_title_to_br():
 # post_or_dry_run
 
 
-def test_dry_run_does_not_call_client(conn, caplog):
+def test_dry_run_does_not_call_client(conn, caplog, monkeypatch):
     client = _FakeClient()
+    captured = _patch_preview(monkeypatch)
     with caplog.at_level(logging.INFO):
         post_or_dry_run(
             client=client,
@@ -204,8 +204,8 @@ def test_dry_run_does_not_call_client(conn, caplog):
             now_unix=2_000_000,
         )
     assert client.posts == []
-    # Dry-run skips the preview fetch — no point burning a server round-trip.
-    assert client.fetched_preview_urls == []
+    # Dry-run skips the preview fetch — no point burning a network round-trip.
+    assert captured == []
     assert any("[DRY-RUN]" in record.message for record in caplog.records)
 
 
@@ -228,9 +228,11 @@ def test_dry_run_records_history_with_dry_run_flag(conn):
     assert posts[0].item_guid == "urn:1"
 
 
-def test_real_run_calls_client_and_records_history(conn):
-    client = _FakeClient(
-        preview=_FakePreview(
+def test_real_run_calls_client_and_records_history(conn, monkeypatch):
+    client = _FakeClient()
+    captured = _patch_preview(
+        monkeypatch,
+        returns=UrlPreviewData(
             url="https://example.com/article",
             title="OG Title",
             description="OG desc",
@@ -245,7 +247,7 @@ def test_real_run_calls_client_and_records_history(conn):
         dry_run=False,
         now_unix=2_000_000,
     )
-    assert client.fetched_preview_urls == ["https://example.com/article?utm_source=x"]
+    assert captured == ["https://example.com/article?utm_source=x"]
     assert len(client.posts) == 1
     body = client.posts[0]
     assert "An article" in body
@@ -256,9 +258,10 @@ def test_real_run_calls_client_and_records_history(conn):
     assert posts[0].is_dry_run is False
 
 
-def test_real_run_posts_anyway_when_preview_fetch_fails(conn, caplog):
-    """Network/server-side preview failures must not block posting."""
-    client = _FakeClient(raise_on_preview=RuntimeError("preview server down"))
+def test_real_run_posts_anyway_when_preview_fetch_fails(conn, caplog, monkeypatch):
+    """Network/parsing failures during preview fetch must not block posting."""
+    client = _FakeClient()
+    _patch_preview(monkeypatch, raises=RuntimeError("preview fetch down"))
     with caplog.at_level(logging.WARNING):
         post_or_dry_run(
             client=client,

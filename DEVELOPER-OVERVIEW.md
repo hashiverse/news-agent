@@ -286,7 +286,16 @@ Every post we send is hashiverse-flavoured HTML with two parts: the article's ti
 
 **Why "fully-rendered"**: the web client's Tiptap editor uses a `<urlpreview ...>` element internally, but that's an editor-only artifact — Tiptap plugins only run while a post is being *edited*. When other clients *view* a post they render plain HTML, so the on-wire format is the structural HTML that the editor's `build_card_dom` (in `hashiverse-client-web/src/tabs/compose/UrlPreviewExtension.ts`) emits at save time. The `plugin-urlpreview-card*` CSS classes are styled by the consuming client at view time — we just need to use them, no inline styles.
 
-Before posting we call `client.fetch_url_preview(article.raw_url)` to populate the card with the URL's OpenGraph title / description / image. Dry-run skips this call. If the fetch fails, the post still goes out — `_fetch_preview_safely` logs a warning and returns blanks, and the card falls back to `article.title` as the link text with no image / no description.
+Before posting we call `news_agent.url_preview.fetch_url_preview(url)`, which fetches the page directly via `urllib.request` (HTTPS-only, 512 KB cap, custom UA — no new runtime dependencies) and parses OG / twitter-card / `<title>` / `<link rel="canonical">` tags via `html.parser.HTMLParser`. The fallback chain matches `hashiverse-lib/src/tools/url_preview.rs` exactly:
+
+| Field | Fallback chain |
+|---|---|
+| `title` | `meta[property='og:title']` → `meta[name='twitter:title']` → `<title>` |
+| `description` | `meta[property='og:description']` → `meta[name='twitter:description']` → `meta[name='description']` |
+| `image_url` | `meta[property='og:image']` → `meta[name='twitter:image']` → `meta[name='twitter:image:src']` |
+| `url` | `meta[property='og:url']` → `<link rel='canonical' href=…>` (note: `href`, not `content`) |
+
+Doing it locally saves one round-trip per post against shared hashiverse-network resources. Dry-run skips the fetch. If the fetch fails (non-HTTPS URL, network error, parse failure), the post still goes out — `posting._fetch_preview_safely` logs a warning and returns blanks, and the card falls back to `article.title` as the link text with no image / no description.
 
 The card has two layout branches, mirroring `build_card_dom`:
 
