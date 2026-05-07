@@ -280,6 +280,59 @@ Cross-identity dedupe key: **canonical URL**, after normalisation in `url_canoni
 
 Posts (real and dry-run) are written to the `posts` table. Dry-run rows have `is_dry_run=1` and `hashiverse_post_id=NULL`. They count toward dedupe and per-identity caps so the scheduler doesn't pick the same article twice across modes.
 
+### 9.1 Post body format — URL preview card
+
+Every post we send is hashiverse-flavoured HTML with two parts: the article's title (HTML-escaped, newlines → `<br>`) followed by `<br><br>` and a fully-rendered URL preview card.
+
+**Why "fully-rendered"**: the web client's Tiptap editor uses a `<urlpreview ...>` element internally, but that's an editor-only artifact — Tiptap plugins only run while a post is being *edited*. When other clients *view* a post they render plain HTML, so the on-wire format is the structural HTML that the editor's `build_card_dom` (in `hashiverse-client-web/src/tabs/compose/UrlPreviewExtension.ts`) emits at save time. The `plugin-urlpreview-card*` CSS classes are styled by the consuming client at view time — we just need to use them, no inline styles.
+
+Before posting we call `client.fetch_url_preview(article.raw_url)` to populate the card with the URL's OpenGraph title / description / image. Dry-run skips this call. If the fetch fails, the post still goes out — `_fetch_preview_safely` logs a warning and returns blanks, and the card falls back to `article.title` as the link text with no image / no description.
+
+The card has two layout branches, mirroring `build_card_dom`:
+
+**With an image** (`preview.image_url` non-blank):
+
+```html
+<div class="plugin-urlpreview-card">
+  <div class="plugin-urlpreview-card-image-container">
+    <img src="<image_url>" alt="" class="plugin-urlpreview-card-image unblur-image">
+    <div class="plugin-urlpreview-card-domain"><domain></div>
+  </div>
+  <div class="plugin-urlpreview-card-inner">
+    <a class="plugin-urlpreview-card-title" href="<url>" rel="noopener noreferrer nofollow"><title></a>
+    <div class="plugin-urlpreview-card-description"><description></div>
+  </div>
+</div>
+```
+
+**Without an image** (`preview.image_url` blank): no `image-container`; the domain label moves *inside* `plugin-urlpreview-card-inner`, above the title link:
+
+```html
+<div class="plugin-urlpreview-card">
+  <div class="plugin-urlpreview-card-inner">
+    <div class="plugin-urlpreview-card-domain"><domain></div>
+    <a class="plugin-urlpreview-card-title" href="<url>" rel="noopener noreferrer nofollow"><title></a>
+    <div class="plugin-urlpreview-card-description"><description></div>
+  </div>
+</div>
+```
+
+The description div is omitted entirely if `preview.description` is blank.
+
+Field resolution at format time (in `posting.format_post_html`):
+
+| Card field | Source (with fallback chain) |
+|---|---|
+| `<url>` (link href) | `preview.url` → `article.raw_url` |
+| `<domain>` | `urlparse(url).hostname` → `url` |
+| `<title>` (link text) | `preview.title` → `article.title` → `url` |
+| `<description>` | `preview.description` (omit div if blank) |
+| `<image_url>` (`<img src>`) | `preview.image_url` (omit image branch if blank) |
+
+Text content is HTML-escaped with `quote=False` (so `&`, `<`, `>` are escaped but `"` passes through — fine inside element bodies). Attribute values use `quote=True` (so `"` becomes `&quot;` and `&` becomes `&amp;` — required to keep attribute parsing well-formed against URLs with query strings, OG titles with quote characters, etc.).
+
+The body is submitted via `client.post_without_preprocessing(html)` — using `post_with_preprocessing` would re-escape every `<` and `>` and destroy the card.
+
 ---
 
 ## 10. Reload behaviour (control-file changes)
