@@ -19,10 +19,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
 from news_agent import cli
 from news_agent.config import load_control
 from news_agent.data_dir import IdentityDir
+from news_agent.keyphrase import derive_keyphrase, derive_keyphrase_cheap
 from news_agent.runtime_state import RuntimeSnapshot, RuntimeState
 
 SALT_A = "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
@@ -48,7 +50,7 @@ def fake_start_clients(monkeypatch):
     """
     invocations: list[list[str]] = []
 
-    def fake(identities, identity_dirs, global_salt):
+    def fake(identities, identity_dirs, global_salt, *, derive_fn):
         invocations.append([i.salt for i in identities if i.enabled])
         return {i.salt: _FakeClient(salt=i.salt) for i in identities if i.enabled}
 
@@ -122,6 +124,7 @@ def test_reload_with_added_identity_brings_up_new_client(
         control_path=control_path,
         daemon_dir=daemon_dir,
         global_salt="g",
+        derive_fn=derive_keyphrase,
     )
 
     assert set(clients.keys()) == {SALT_A, SALT_B}
@@ -147,6 +150,7 @@ def test_reload_with_removed_identity_drops_client(
         control_path=control_path,
         daemon_dir=daemon_dir,
         global_salt="g",
+        derive_fn=derive_keyphrase,
     )
 
     assert set(clients.keys()) == {SALT_A}
@@ -174,6 +178,7 @@ def test_reload_with_disabled_identity_drops_client(
         control_path=control_path,
         daemon_dir=daemon_dir,
         global_salt="g",
+        derive_fn=derive_keyphrase,
     )
 
     assert set(clients.keys()) == {SALT_A}
@@ -201,6 +206,7 @@ def test_reload_re_enables_a_disabled_identity(
         control_path=control_path,
         daemon_dir=daemon_dir,
         global_salt="g",
+        derive_fn=derive_keyphrase,
     )
 
     assert set(clients.keys()) == {SALT_A, SALT_B}
@@ -230,6 +236,7 @@ def test_reload_with_no_identity_changes_still_rebuilds(
         control_path=control_path,
         daemon_dir=daemon_dir,
         global_salt="g",
+        derive_fn=derive_keyphrase,
     )
 
     # Same salts present, but the dict's contents are fresh objects.
@@ -257,6 +264,7 @@ def test_reload_invalid_yaml_keeps_previous_state(
         control_path=control_path,
         daemon_dir=daemon_dir,
         global_salt="g",
+        derive_fn=derive_keyphrase,
     )
 
     # Previous state preserved.
@@ -284,9 +292,110 @@ def test_reload_swaps_runtime_snapshot(
         control_path=control_path,
         daemon_dir=daemon_dir,
         global_salt="g",
+        derive_fn=derive_keyphrase,
     )
 
     snapshot_after = state.snapshot()
     assert snapshot_after is not snapshot_before
     salts_after = {i.salt for i in snapshot_after.control.identities}
     assert salts_after == {SALT_A, SALT_C}
+
+
+def test_reload_state_forwards_derive_fn(monkeypatch, daemon_dir, control_path):
+    """_reload_state passes the derive_fn arg straight through to _start_clients_for_identities."""
+    captured: list = []
+
+    def fake(identities, identity_dirs, global_salt, *, derive_fn):
+        captured.append(derive_fn)
+        return {i.salt: _FakeClient(salt=i.salt) for i in identities if i.enabled}
+
+    monkeypatch.setattr(cli, "_start_clients_for_identities", fake)
+
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+    control = load_control(control_path)
+    from news_agent.data_dir import ensure_identity_dirs
+    ensure_identity_dirs(daemon_dir, control.identities)
+
+    clients: dict[str, object] = {SALT_A: _FakeClient(salt=SALT_A)}
+    state = RuntimeState(RuntimeSnapshot(control=control))
+
+    def sentinel(_g: str, _l: str) -> str:
+        return "sentinel"
+
+    cli._reload_state(
+        clients=clients,
+        state=state,
+        control_path=control_path,
+        daemon_dir=daemon_dir,
+        global_salt="g",
+        derive_fn=sentinel,
+    )
+
+    assert captured == [sentinel]
+
+
+# ---------------------------------------------------------------------------
+# cli.run --test wiring (cheap vs. production argon2)
+
+
+class _NoOpWatcher:
+    def __init__(self, *_a, **_kw) -> None:
+        pass
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+
+def _stub_cli_run_side_effects(monkeypatch, *, captured_derive_fns: list) -> None:
+    """Stub the side-effecting parts of cli.run so a CliRunner invocation
+    completes synchronously without touching the network or main loop.
+
+    Leaves real: argv parsing, derive_fn selection, the call to
+    _start_clients_for_identities. That's the surface this fixture is testing.
+    """
+    def capturing_start(identities, identity_dirs, global_salt, *, derive_fn):
+        captured_derive_fns.append(derive_fn)
+        return {}
+
+    monkeypatch.setattr(cli, "_start_clients_for_identities", capturing_start)
+    monkeypatch.setattr(cli, "run_loop", lambda **_: None)
+    monkeypatch.setattr(cli, "FileWatcher", _NoOpWatcher)
+    monkeypatch.setenv("NEWS_AGENT_GLOBAL_SALT", "z" * 64)
+
+
+def test_run_with_test_mode_uses_cheap_derive_fn(monkeypatch, tmp_path):
+    """--test wires derive_keyphrase_cheap through to client startup."""
+    captured: list = []
+    _stub_cli_run_side_effects(monkeypatch, captured_derive_fns=captured)
+
+    control_path = tmp_path / "control.yaml"
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+
+    result = CliRunner().invoke(
+        cli.main, ["run", "--control", str(control_path), "--test"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured == [derive_keyphrase_cheap]
+
+
+def test_run_without_test_mode_uses_production_derive_fn(monkeypatch, tmp_path):
+    """Without --test, derive_keyphrase (production) is wired through."""
+    captured: list = []
+    _stub_cli_run_side_effects(monkeypatch, captured_derive_fns=captured)
+    # Path.home() drives daemon-dir resolution; redirect to tmp so the test
+    # creates ~/.news-agent inside tmp_path rather than the developer's $HOME.
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    control_path = tmp_path / "control.yaml"
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+
+    result = CliRunner().invoke(
+        cli.main, ["run", "--control", str(control_path), "--create-new"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured == [derive_keyphrase]

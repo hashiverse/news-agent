@@ -9,7 +9,12 @@ from news_agent.keyphrase import (
     ARGON2_OUTPUT_BYTES,
     ARGON2_PARALLELISM,
     ARGON2_TIME_COST,
+    TEST_MODE_ARGON2_MEMORY_KIB,
+    TEST_MODE_ARGON2_OUTPUT_BYTES,
+    TEST_MODE_ARGON2_PARALLELISM,
+    TEST_MODE_ARGON2_TIME_COST,
     derive_keyphrase,
+    derive_keyphrase_cheap,
 )
 
 # Cheap parameters for fast tests. Production cost is too heavy to run repeatedly.
@@ -79,3 +84,33 @@ def test_domain_salt_changes_output():
         "g", "l", domain_salt=b"news-agent-v999", **FAST_KWARGS
     )
     assert base != other
+
+
+def test_test_mode_parameters_are_locked_in():
+    """Test-mode defaults shouldn't drift without an explicit decision."""
+    assert TEST_MODE_ARGON2_MEMORY_KIB == 8 * 1024
+    assert TEST_MODE_ARGON2_TIME_COST == 1
+    assert TEST_MODE_ARGON2_PARALLELISM == 1
+    assert TEST_MODE_ARGON2_OUTPUT_BYTES == 32
+
+
+def test_derive_keyphrase_cheap_is_deterministic():
+    a = derive_keyphrase_cheap("global-X", "local-Y")
+    b = derive_keyphrase_cheap("global-X", "local-Y")
+    assert a == b
+    assert len(a) == TEST_MODE_ARGON2_OUTPUT_BYTES * 2
+
+
+def test_derive_keyphrase_cheap_uses_test_mode_constants():
+    """The wrapper must actually be parameterised by the TEST_MODE_* constants —
+    not silently fall back to production parameters or any other set."""
+    via_wrapper = derive_keyphrase_cheap("global", "local")
+    via_explicit = derive_keyphrase(
+        "global",
+        "local",
+        memory_kib=TEST_MODE_ARGON2_MEMORY_KIB,
+        time_cost=TEST_MODE_ARGON2_TIME_COST,
+        parallelism=TEST_MODE_ARGON2_PARALLELISM,
+        output_bytes=TEST_MODE_ARGON2_OUTPUT_BYTES,
+    )
+    assert via_wrapper == via_explicit

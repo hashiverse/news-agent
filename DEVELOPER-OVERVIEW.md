@@ -316,7 +316,7 @@ Currently `--test` runs production argon2 (m=1 GiB, t=4) — that's ~5 seconds p
 - When `--test` is set in `cli.run`, pass `derive_keyphrase_cheap` as the `derive_fn`.
 - Add a unit test verifying `--test` uses the cheap function.
 
-### 12.b — Bio updates after client startup (deferred)
+### 12.b — Bio updates
 
 `hashiverse_setup.start_hashiverse_client_for_identity` brings up the client but does NOT call `client.set_bio(nickname, status, selfie, ...)`. The control file's `nickname` / `status` / `selfie` fields are read into the `IdentityConfig` and then ignored beyond identity-label formatting.
 
@@ -325,14 +325,6 @@ To wire this up: after client startup, call `client.set_bio(...)` with the YAML 
 ### 12.c — Hashiverse post_id capture
 
 `posting.post_or_dry_run` always records `hashiverse_post_id=None` for real posts. The hashiverse client's `post_with_preprocessing` doesn't currently return the new post's ID synchronously. When the API exposes it, capture and persist.
-
-### 12.d — Other deferred items
-
-- Manual `news-agent refresh` CLI subcommand and SIGUSR1 immediate-poll handler for the remote control-file fetcher.
-- Authentication for private GitHub repos (current `remote_source` assumes public).
-- `daemon:` block in the control YAML (for `bootstrap_addresses`, refresh intervals, etc. — currently scattered across CLI flags).
-- Per-source sub-caps, language filters, age cutoffs, min-post-interval.
-- Digest overflow when an identity hits its daily cap.
 
 ---
 

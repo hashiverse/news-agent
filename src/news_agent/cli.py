@@ -17,6 +17,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import click
@@ -34,6 +35,7 @@ from news_agent.global_salt import (
     load_global_salt,
 )
 from news_agent.hashiverse_setup import start_hashiverse_client_for_identity
+from news_agent.keyphrase import derive_keyphrase, derive_keyphrase_cheap
 from news_agent.poller import RemotePoller
 from news_agent.remote_source import (
     CachedFile,
@@ -149,6 +151,13 @@ def run(
     watcher: FileWatcher | None = None
     ephemeral_home: Path | None = None
 
+    # --test runs cheap argon2 (~50 ms/identity) instead of production
+    # parameters (~5 s/identity). The cheap params are safe here because
+    # --test also implies an ephemeral home dir + --dry-run.
+    derive_fn: Callable[[str, str], str] = (
+        derive_keyphrase_cheap if test_mode else derive_keyphrase
+    )
+
     if test_mode:
         ephemeral_home = Path(tempfile.mkdtemp(prefix="news-agent-test-"))
         logger.info("test mode: using ephemeral home directory at %s", ephemeral_home)
@@ -197,7 +206,10 @@ def run(
         # Bring up one hashiverse client per enabled identity. First-run paths
         # do argon2 (slow); subsequent runs load the cached public key.
         clients = _start_clients_for_identities(
-            control.identities, identity_dirs, salt.raw_value
+            control.identities,
+            identity_dirs,
+            salt.raw_value,
+            derive_fn=derive_fn,
         )
 
         stop_event = threading.Event()
@@ -210,6 +222,7 @@ def run(
                 control_path=control_path,
                 daemon_dir=daemon_dir,
                 global_salt=salt.raw_value,
+                derive_fn=derive_fn,
             )
 
         watcher = FileWatcher(control_path, on_change)
@@ -294,6 +307,7 @@ def _reload_state(
     control_path: Path,
     daemon_dir: Path,
     global_salt: str,
+    derive_fn: Callable[[str, str], str],
 ) -> None:
     """Re-parse the control file and fully rebuild the in-memory state.
 
@@ -334,7 +348,10 @@ def _reload_state(
     # Rebuild from disk. Cached public keys mean only brand-new identities
     # pay argon2.
     new_clients = _start_clients_for_identities(
-        new_control.identities, new_identity_dirs, global_salt
+        new_control.identities,
+        new_identity_dirs,
+        global_salt,
+        derive_fn=derive_fn,
     )
     clients.update(new_clients)
 
@@ -346,6 +363,8 @@ def _start_clients_for_identities(
     identities: tuple[IdentityConfig, ...],
     identity_dirs: list[IdentityDir],
     global_salt: str,
+    *,
+    derive_fn: Callable[[str, str], str],
 ) -> dict[str, object]:
     """Start one hashiverse client per enabled identity.
 
@@ -366,6 +385,7 @@ def _start_clients_for_identities(
             identity=identity,
             identity_dir=identity_dir.path,
             global_salt=global_salt,
+            derive_fn=derive_fn,
         )
         clients[identity.salt] = client
         logger.info(

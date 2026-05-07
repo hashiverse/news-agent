@@ -21,6 +21,15 @@ ARGON2_TIME_COST = 4
 ARGON2_PARALLELISM = 1
 ARGON2_OUTPUT_BYTES = 64
 
+# Test-mode parameters — used by the daemon when invoked with `--test`. Paid
+# at most once per identity per ephemeral home, so cutting cost from ~5 s to
+# ~50 ms makes smoke runs usable. NOT safe for production: a leaked cheap
+# keyphrase plus the control file would yield NEWS_AGENT_GLOBAL_SALT cheaply.
+TEST_MODE_ARGON2_MEMORY_KIB = 8 * 1024  # 8 MiB
+TEST_MODE_ARGON2_TIME_COST = 1
+TEST_MODE_ARGON2_PARALLELISM = 1
+TEST_MODE_ARGON2_OUTPUT_BYTES = 32
+
 # Domain-separator salt for argon2. Argon2 requires a salt parameter; per-identity
 # uniqueness already lives in the blake3-mixed secret, so this constant is fine
 # (it's not a security boundary).
@@ -65,3 +74,15 @@ def derive_keyphrase(
         type=Type.ID,
     )
     return raw.hex()
+
+
+def derive_keyphrase_cheap(global_salt: str, local_salt: str) -> str:
+    """Cheap-argon2 derivation for `--test` mode. Not for production use."""
+    return derive_keyphrase(
+        global_salt,
+        local_salt,
+        memory_kib=TEST_MODE_ARGON2_MEMORY_KIB,
+        time_cost=TEST_MODE_ARGON2_TIME_COST,
+        parallelism=TEST_MODE_ARGON2_PARALLELISM,
+        output_bytes=TEST_MODE_ARGON2_OUTPUT_BYTES,
+    )
