@@ -1,9 +1,10 @@
 """``news-agent`` CLI entrypoint.
 
 Reads a YAML control file (local path or HTTPS URL), sets up the per-daemon
-data directory, and watches the control file for changes (with periodic
-re-fetch when it's a remote URL). No keys, no hashiverse client interaction
-yet — those land in later phases.
+data directory, brings up one hashiverse client per enabled identity, and
+runs the scheduling-and-posting loop. The control file is watched for
+changes (with periodic re-fetch when it's a remote URL); on change, the
+in-memory state is fully rebuilt from disk.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ from news_agent.remote_source import (
     is_url,
     normalize_github_url,
 )
+from news_agent.runner import run_loop
 from news_agent.runtime_state import RuntimeSnapshot, RuntimeState
 from news_agent.state_db import open_state_db
 from news_agent.watcher import FileWatcher
@@ -127,11 +129,18 @@ def main() -> None:
     is_flag=True,
     help="Run with an ephemeral home directory created in a temp path; deleted on exit. Implies --create-new. Useful for smoke tests so they don't leave debris in ~/.news-agent.",
 )
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    help="Don't actually post to hashiverse — log what would have been posted instead. Dry-run posts ARE recorded in the posts-history table (with is_dry_run=1) so the scheduler still respects per-identity caps and cross-identity dedupe.",
+)
 def run(
     control_arg: str,
     create_new: bool,
     remote_poll_minutes: int,
     test_mode: bool,
+    dry_run: bool,
 ) -> None:
     """Start the daemon. Watches the control file for changes and reloads in place."""
     _configure_logging()
@@ -144,6 +153,12 @@ def run(
         ephemeral_home = Path(tempfile.mkdtemp(prefix="news-agent-test-"))
         logger.info("test mode: using ephemeral home directory at %s", ephemeral_home)
         create_new = True  # the directory definitely doesn't exist yet
+        # --test forces --dry-run. The whole point of test mode is "smoke run
+        # without consequences" — accidentally posting to the live network
+        # from a test invocation would defeat the purpose.
+        if not dry_run:
+            logger.info("test mode: forcing --dry-run (no real posts will be made)")
+        dry_run = True
         # atexit registration is a belt-and-braces: it runs on normal exit,
         # SystemExit, and unhandled exceptions, even if the outer finally block
         # below didn't get a chance to run (e.g. signal-killed mid-syscall).
@@ -236,8 +251,13 @@ def run(
             pass
 
         try:
-            while not stop_event.is_set():
-                time.sleep(0.5)
+            run_loop(
+                state=state,
+                clients=clients,
+                conn=state_db,
+                stop_event=stop_event,
+                dry_run=dry_run,
+            )
         except KeyboardInterrupt:
             logger.info("received Ctrl-C, shutting down")
         finally:

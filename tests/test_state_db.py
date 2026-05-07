@@ -47,15 +47,34 @@ def test_journal_mode_is_wal(tmp_path):
         conn.close()
 
 
-def test_no_tables_yet(tmp_path):
-    """Schema is intentionally empty for now — verify there are no tables yet."""
+def test_known_tables_exist_after_open(tmp_path):
+    """Schema bootstrap creates the known tables; idempotent on re-open."""
     daemon_dir = tmp_path / "daemon"
     daemon_dir.mkdir()
     conn = open_state_db(daemon_dir)
     try:
-        rows = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
-        assert rows == []
+        rows = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+        assert "posts" in rows
+        assert "feed_cache" in rows
     finally:
         conn.close()
+
+    # Re-open — schema bootstrap must be idempotent.
+    conn2 = open_state_db(daemon_dir)
+    try:
+        rows2 = {
+            row[0]
+            for row in conn2.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+        assert rows == rows2
+    finally:
+        conn2.close()
