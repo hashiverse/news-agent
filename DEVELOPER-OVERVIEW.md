@@ -167,6 +167,8 @@ identities:
     sources:
       - https://feeds.bbci.co.uk/news/world/africa/rss.xml
       - https://feeds.bbci.co.uk/news/science_and_environment/rss.xml
+    keywords_required: ["rust"]                   # optional — ALL must match
+    keywords_optional: ["async", "wasm"]          # optional — ANY must match
 ```
 
 | Field | Required | Notes |
@@ -178,6 +180,8 @@ identities:
 | `enabled` | no (true) | Soft-pause without removing the identity. |
 | `max_posts_per_day` | yes | Per-identity cap. |
 | `sources` | yes | RSS URLs, non-empty list. The complete scope of what this identity mirrors. |
+| `keywords_required` | no (empty) | Case-insensitive substring filter against title + summary. **All** entries must appear for the article to be eligible. Empty/absent → no filter. |
+| `keywords_optional` | no (empty) | Same shape as `keywords_required`, but **at least one** entry must appear. Empty/absent → no filter. Combine with `keywords_required` to AND together (e.g. require `rust`, *and* require any of `async`/`wasm`). |
 
 Deliberately **not** in the schema:
 - No `name` field (salt is unique).

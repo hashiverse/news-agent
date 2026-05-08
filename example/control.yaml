@@ -2,7 +2,10 @@
 #
 # Each item under `identities:` describes a hashiverse identity hosted by this
 # daemon. The salt is the unique identifier — replace these sample salts with
-# your own random ≥32-char strings before running for real.
+# your own random ≥32-char strings before running for real.  THis salt is combined
+# with the `NEWS_AGENT_GLOBAL_SALT` environment variable to produce a passphrase
+# for the hashiverse identity.  This way, someone who wants to adopt the identity
+# on hashiverse can be given the passphrase.
 #
 # Each identity carries its own `sources:` list of RSS URLs. There is no
 # separate feeds file and no selector machinery — if two identities should
@@ -10,31 +13,18 @@
 # load time if it spots that).
 identities:
   - salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
-    nickname: "BBC Mirror"
-    status: "Auto-mirrored from BBC RSS feeds. Not affiliated with the BBC."
+    nickname: "Hashiverse news-agent: Tesla Robotaxi news"
+    status: "I collect together as much news as I can find about the progress of Tesla's robotaxi business."
     enabled: true
-    max_posts_per_day: 30
+    max_posts_per_day: 96
     sources:
-      - https://feeds.bbci.co.uk/news/world/africa/rss.xml
-      - https://feeds.bbci.co.uk/news/science_and_environment/rss.xml
-    # Hashtags appended (with `#` prefix) to every post this identity makes.
-    # Strings here must NOT contain `#`.
-    hashtags: ["news", "world"]
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC4DBLlq1x0AKmip1QJUcbXg
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCYkz6A-90_N0967AEP8vKjg
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC9S7mI6p-p1O65R8n1t9j1g
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC52S_M9Yit4U1M9Z153k53A
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC6px-Z_y_Xq-o9v59PZ7vow
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCgbyN_o-Guwpyqfuuz3pyIw
+    hashtags: []
+    keywords_required: ["tesla", "robotaxi"]
+    keywords_optional: []
 
-  - salt: "c3a7e2f1b9d4a8e6c2f5d1b8e4a7c3f6d2b9e5a8c1f4d7b3e9a6c2f5d8b1e4c7"
-    nickname: "Science Daily Mirror"
-    status: "Top science stories from public-interest sources."
-    enabled: true
-    max_posts_per_day: 20
-    sources:
-      - https://feeds.bbci.co.uk/news/science_and_environment/rss.xml
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UC9-y-6csu5WGm29I7JiwpnA
-
-  - salt: "d3a7e2f1b9d4a8e6c2f5d1b8e4a7c3f6d2b9e5a8c1f4d7b3e9a6c2f5d8b1e4c7"
-    nickname: "Science Daily Mirror 2"
-    status: "Top science stories from public-interest sources."
-    enabled: true
-    max_posts_per_day: 10
-    sources:
-      - https://feeds.bbci.co.uk/news/science_and_environment/rss.xml
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UC9-y-6csu5WGm29I7JiwpnA

@@ -202,6 +202,8 @@ def _find_soonest_with_eligible_content(
             recently_posted_canonical_urls=recently_posted,
             now_unix=now_unix,
             rng=rng,
+            keywords_required=identity.keywords_required,
+            keywords_optional=identity.keywords_optional,
         )
         if chosen is not None:
             return next_t, identity, chosen

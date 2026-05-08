@@ -45,6 +45,13 @@ class IdentityConfig:
     selfie: str | None = None
     enabled: bool = True
     hashtags: tuple[str, ...] = ()
+    # Case-insensitive substring filters against (title + summary).
+    # - keywords_required: ALL must appear (AND). Empty → skip this check.
+    # - keywords_optional: ANY must appear (OR). Empty → skip this check.
+    # An identity with both fields empty (or absent) accepts all articles.
+    # Stored lowercase at load time so the picker compares cheaply.
+    keywords_required: tuple[str, ...] = ()
+    keywords_optional: tuple[str, ...] = ()
 
     @property
     def log_label(self) -> str:
@@ -169,6 +176,13 @@ def _build_identity(raw: Any, index: int) -> IdentityConfig:
         hashtags_stripped.append(cleaned)
     hashtags = tuple(hashtags_stripped)
 
+    # Lowercase keywords at load time so the picker matches against a
+    # lower-cased haystack without re-lowering per article.
+    required_raw = _coerce_str_list(raw.get("keywords_required"), "keywords_required", label)
+    keywords_required = tuple(kw.lower() for kw in required_raw)
+    optional_raw = _coerce_str_list(raw.get("keywords_optional"), "keywords_optional", label)
+    keywords_optional = tuple(kw.lower() for kw in optional_raw)
+
     return IdentityConfig(
         salt=salt,
         nickname=nickname,
@@ -178,6 +192,8 @@ def _build_identity(raw: Any, index: int) -> IdentityConfig:
         selfie=selfie_raw,
         enabled=enabled_raw,
         hashtags=hashtags,
+        keywords_required=keywords_required,
+        keywords_optional=keywords_optional,
     )
 
 

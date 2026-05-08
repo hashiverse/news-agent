@@ -396,3 +396,104 @@ identities:
     # No cross-identity duplicate warning fires (only one identity holds it).
     cross_warns = [r.message for r in caplog.records if "appears in" in r.message]
     assert cross_warns == []
+
+
+# ---------------------------------------------------------------------------
+# keywords_required / keywords_optional
+
+
+def test_keywords_omitted_defaults_to_empty(tmp_path):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "no-keywords"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+"""
+    config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities[0].keywords_required == ()
+    assert config.identities[0].keywords_optional == ()
+
+
+def test_keywords_required_lowercased_at_load_time(tmp_path):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "rusty"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+    keywords_required: ["Rust", "ASYNC"]
+"""
+    config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities[0].keywords_required == ("rust", "async")
+
+
+def test_keywords_optional_lowercased_at_load_time(tmp_path):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "rusty"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+    keywords_optional: ["Rust", "WASM", "Tokio"]
+"""
+    config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities[0].keywords_optional == ("rust", "wasm", "tokio")
+
+
+def test_keywords_both_round_trip_independently(tmp_path):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "rusty"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+    keywords_required: ["rust"]
+    keywords_optional: ["async", "threading"]
+"""
+    config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    identity = config.identities[0]
+    assert identity.keywords_required == ("rust",)
+    assert identity.keywords_optional == ("async", "threading")
+
+
+def test_keywords_required_non_list_skips_identity(tmp_path, caplog):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "bad"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+    keywords_required: "rust"
+"""
+    with caplog.at_level(logging.INFO):
+        config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities == ()
+    assert any(
+        "keywords_required must be a list of strings" in record.message
+        for record in caplog.records
+    )
+
+
+def test_keywords_optional_empty_string_entry_skips_identity(tmp_path, caplog):
+    yaml_text = f"""
+identities:
+  - salt: "{SALT_A}"
+    nickname: "bad"
+    status: "x"
+    max_posts_per_day: 1
+    sources: ["https://example.com/a"]
+    keywords_optional: ["rust", ""]
+"""
+    with caplog.at_level(logging.INFO):
+        config = load_control(_write(tmp_path / "c.yaml", yaml_text))
+    assert config.identities == ()
+    assert any(
+        "keywords_optional contains an empty string" in record.message
+        for record in caplog.records
+    )
