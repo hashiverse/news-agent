@@ -115,7 +115,7 @@ news-agent run [OPTIONS]
 |---|---|---|
 | `--control PATH-or-URL` | required | YAML control file. Local path OR HTTPS URL. GitHub `blob/` URLs are auto-rewritten to `raw.githubusercontent.com`. |
 | `--create-new` | flag | Required if the per-daemon directory doesn't already exist (typo guard for `NEWS_AGENT_GLOBAL_SALT`). |
-| `--remote-poll-minutes INT` | default 60 | When `--control` is a URL, how often to re-fetch it. Ignored for local-path control files. |
+| `--remote-control-poll-minutes INT` | default 60 | When `--control` is a URL, how often to re-fetch it. Ignored for local-path control files. |
 | `--test` | flag | Use an ephemeral home dir (auto-deleted on exit), implies `--create-new`, runs in dry-run with cheap argon2. Mutually exclusive with `--production`. |
 | `--production` | flag | Post for real to hashiverse. Without this flag, dry-run is the default — logs what would have been posted instead. Mutually exclusive with `--test`. |
 | `--verbose-hashiverse` | flag | Bridge Rust hashiverse-client `log::*` output into Python's logging. Off by default — the Rust stack is chatty. See §10. |

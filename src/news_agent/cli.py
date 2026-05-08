@@ -127,7 +127,7 @@ def main() -> None:
     help="Create the per-daemon data directory if it doesn't already exist.",
 )
 @click.option(
-    "--remote-poll-minutes",
+    "--remote-control-poll-minutes",
     type=click.IntRange(min=1),
     default=60,
     show_default=True,
@@ -160,7 +160,7 @@ def main() -> None:
 def run(
     control_arg: str,
     create_new: bool,
-    remote_poll_minutes: int,
+    remote_control_poll_minutes: int,
     test_mode: bool,
     production: bool,
     verbose_hashiverse: bool,
@@ -286,7 +286,7 @@ def run(
         # on the configured interval, and a 200 OK rewrites the cache file,
         # which the watchdog observer then sees → reload pipeline runs.
         if control_url and control_cached:
-            interval_seconds = remote_poll_minutes * 60.0
+            interval_seconds = remote_control_poll_minutes * 60.0
 
             def fetch_control() -> None:
                 fetch_to_cache(control_url, control_cached)
