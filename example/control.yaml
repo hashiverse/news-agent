@@ -41,3 +41,25 @@ identities:
     keywords_required: ["tesla"]
     keywords_optional: ["fsd", "cybercab", "robotaxi"]
 
+  - salt: "c7e3f1a2b8d4e6f9a3c7b1d5e2f8a4c6b9d3e7f1a5c8b2d6e4f9a1c3b7d5e2f8"
+    nickname: "Linux YouTube (news-agent)"
+    status: "Curated Linux and FOSS content from the top YouTube channels."
+    enabled: true
+    max_posts_per_day: 24
+    sources:
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCxQKHvKbmSzGMvUrVtJYnUA  # Learn Linux TV
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCVls1GmFKf6WlTraIb_IaJg  # DistroTube
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC5UAwBUum7CPN5buc-_N1Fw  # The Linux Experiment
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCld68syR8Wi-GY_n4CaoJGA  # Brodie Robertson
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCg6gPGh8HU2U01vaFCAsvmQ  # Chris Titus Tech
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC7YOGHUfC1Tb6E4pudI9STA  # Mental Outlaw
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCMiyV_Ib77XLpzHPQH_q0qQ  # Veronica Explains
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCjSEJkpGbcZhvo0lr-44X_w  # TechHut
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCR-DXc1voovS8nhAvccRZhg  # Jeff Geerling
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCHkYOD-3fZbuGhwsADBd9ZQ  # Lawrence Systems
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCoryWpk4QVYKFCJul9KBdyw  # Switched to Linux
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCHugE6eRhqB9_AZQh4DDbIw  # Jupiter Broadcasting
+    hashtags: ["linux"]
+    keywords_required: ["linux"]
+    keywords_optional: []
+
