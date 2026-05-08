@@ -143,13 +143,15 @@ def _one_iteration(
     if seconds_until_post > 1:
         # Announce the imminent post before sleeping; otherwise the loop is
         # silent for up to 24h between posts and the operator can't tell what
-        # the daemon is "waiting for".
+        # the daemon is "waiting for". Include the article URL so the log
+        # line is enough to inspect what's queued without grepping further.
         logger.info(
-            "next post: %s → %s at %s (in %s)",
+            "next post: %s → %s at %s (in %s) %s",
             identity.log_label,
             _truncate_title(article.title),
             _format_local_time(next_post_time),
             _format_duration(seconds_until_post),
+            article.raw_url,
         )
 
     if not _wait_until(next_post_time, stop_event, reload_event):

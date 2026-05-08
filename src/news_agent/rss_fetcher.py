@@ -2,6 +2,12 @@
 
 For each source URL the fetcher does:
 
+0. If the cached body is younger than ``CACHE_FRESHNESS_WINDOW_SECONDS``
+   (30 min by default), return it immediately — no network call. Tight
+   poll loops on the runner side (each iteration re-fetches every source
+   URL on the way to picking the next post) would otherwise hammer the
+   feeds; this is also the only thing that helps when a server doesn't
+   honour ``If-None-Match``/``If-Modified-Since`` and always returns 200.
 1. Look up the previously-cached body and ETag/Last-Modified from
    :mod:`news_agent.feed_cache_db`.
 2. Issue an HTTPS ``GET`` with ``If-None-Match`` / ``If-Modified-Since``
@@ -39,6 +45,14 @@ logger = logging.getLogger(__name__)
 USER_AGENT = "news-agent/0.1 (+https://github.com/hashiverse/news-agent)"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
+# When the cache is younger than this, return it without hitting the network.
+# Two reasons: (a) the runner re-fetches every source every iteration of its
+# scheduling loop, which pings the feed far more often than feeds actually
+# update; (b) some servers don't honour `If-None-Match` / `If-Modified-Since`
+# and always return 200, so the conditional-GET path can't save bandwidth on
+# its own. 30 min is a comfortable middle ground for news/YouTube feeds.
+CACHE_FRESHNESS_WINDOW_SECONDS = 30 * 60
+
 
 class FeedFetchError(RuntimeError):
     """Raised when a feed cannot be fetched and no cached body is available."""
@@ -51,17 +65,35 @@ def fetch_feed_body(
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     opener: urllib.request.OpenerDirector | None = None,
     now_unix: int | None = None,
+    cache_freshness_window: float = CACHE_FRESHNESS_WINDOW_SECONDS,
 ) -> bytes:
     """Return the (possibly cached) body of ``source_url``.
 
     Raises :class:`FeedFetchError` only when fetching fails *and* nothing is
     cached. Transient errors over a populated cache return the stale body
     with a logged warning.
+
+    ``cache_freshness_window`` overrides the module-default cache-reuse
+    window in seconds. Pass ``0`` to disable the short-circuit and force
+    every call through the conditional-GET path (mostly useful in tests).
     """
     if now_unix is None:
         now_unix = int(time.time())
 
     cached = get_cached(conn, source_url)
+
+    # Short-circuit: cache is younger than the freshness window → return it
+    # without making any network request at all.
+    if cached is not None:
+        cache_age = max(0, now_unix - cached.fetched_at_unix)
+        if cache_age < cache_freshness_window:
+            logger.info(
+                "fetched %s (%d bytes, from cache, age %ds, fresh — skipped network)",
+                source_url,
+                len(cached.body),
+                cache_age,
+            )
+            return cached.body
 
     request = urllib.request.Request(
         source_url, headers={"User-Agent": USER_AGENT}

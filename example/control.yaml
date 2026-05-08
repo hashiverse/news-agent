@@ -13,19 +13,27 @@
 # load time if it spots that).
 identities:
   - salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
-    nickname: "Hashiverse news-agent: Tesla Robotaxi news"
+    nickname: "Tesla FSD & Robotaxi news (news-agent)"
     status: "I collect together as much news as I can find about the progress of Tesla's robotaxi business."
     enabled: true
     max_posts_per_day: 192
     sources:
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UC4DBLlq1x0AKmip1QJUcbXg
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UCgbyN_o-Guwpyqfuuz3pyIw
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC4DBLlq1x0AKmip1QJUcbXg  # Brighter with Herbert
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCgbyN_o-Guwpyqfuuz3pyIw  # Farzad
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCagiBBx1prefrlsDzDxuA9A  # Solving The Money Problem
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCNTMsMl_jsZwQr53ZArPATw  # Electrified
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCJx4yy-93kWH-wOr9RKuWAQ  # Michael Tyler
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC-qg1WyA2FK45-fGcrZsYjg  # Curious Pejjy
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCF1iS7Bp9_hsQphNF6o8qwQ  # Matt Pocius (Tesla Stock & Money)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCaBOIBVD_f6eyRRRBRrCz8w  # Dirty Tesla
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCbNOk_wOA7UMvYrF7K0iBvQ  # FutureAza
       - https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml
+      - https://rss.nytimes.com/services/xml/rss/nyt/Automobiles.xml
       - https://www.theguardian.com/technology/rss
       - https://feeds.bbci.co.uk/news/technology/rss.xml
-      - https://www.telegraph.co.uk/technology/rss.xml
-      - https://rss.nytimes.com/services/xml/rss/nyt/Automobiles.xml
+      - https://www.theguardian.com/technology/motoring/rss
+      -
     hashtags: []
     keywords_required: ["tesla"]
-    keywords_optional: []
+    keywords_optional: ["fsd", "cybercab", "robotaxi"]
 
