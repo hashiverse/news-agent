@@ -55,7 +55,7 @@ def fake_start_clients(monkeypatch):
     """
     invocations: list[list[str]] = []
 
-    def fake(identities, identity_dirs, global_salt, *, derive_fn):
+    def fake(identities, identity_dirs, global_salt, *, derive_fn, dry_run):
         invocations.append([i.salt for i in identities if i.enabled])
         return {i.salt: _FakeClient(salt=i.salt) for i in identities if i.enabled}
 
@@ -130,6 +130,7 @@ def test_reload_with_added_identity_brings_up_new_client(
         daemon_dir=daemon_dir,
         global_salt="g",
         derive_fn=derive_keyphrase,
+        dry_run=True,
     )
 
     assert set(clients.keys()) == {SALT_A, SALT_B}
@@ -156,6 +157,7 @@ def test_reload_with_removed_identity_drops_client(
         daemon_dir=daemon_dir,
         global_salt="g",
         derive_fn=derive_keyphrase,
+        dry_run=True,
     )
 
     assert set(clients.keys()) == {SALT_A}
@@ -184,6 +186,7 @@ def test_reload_with_disabled_identity_drops_client(
         daemon_dir=daemon_dir,
         global_salt="g",
         derive_fn=derive_keyphrase,
+        dry_run=True,
     )
 
     assert set(clients.keys()) == {SALT_A}
@@ -212,6 +215,7 @@ def test_reload_re_enables_a_disabled_identity(
         daemon_dir=daemon_dir,
         global_salt="g",
         derive_fn=derive_keyphrase,
+        dry_run=True,
     )
 
     assert set(clients.keys()) == {SALT_A, SALT_B}
@@ -242,6 +246,7 @@ def test_reload_with_no_identity_changes_still_rebuilds(
         daemon_dir=daemon_dir,
         global_salt="g",
         derive_fn=derive_keyphrase,
+        dry_run=True,
     )
 
     # Same salts present, but the dict's contents are fresh objects.
@@ -270,6 +275,7 @@ def test_reload_invalid_yaml_keeps_previous_state(
         daemon_dir=daemon_dir,
         global_salt="g",
         derive_fn=derive_keyphrase,
+        dry_run=True,
     )
 
     # Previous state preserved.
@@ -298,6 +304,7 @@ def test_reload_swaps_runtime_snapshot(
         daemon_dir=daemon_dir,
         global_salt="g",
         derive_fn=derive_keyphrase,
+        dry_run=True,
     )
 
     snapshot_after = state.snapshot()
@@ -310,7 +317,7 @@ def test_reload_state_forwards_derive_fn(monkeypatch, daemon_dir, control_path):
     """_reload_state passes the derive_fn arg straight through to _start_clients_for_identities."""
     captured: list = []
 
-    def fake(identities, identity_dirs, global_salt, *, derive_fn):
+    def fake(identities, identity_dirs, global_salt, *, derive_fn, dry_run):
         captured.append(derive_fn)
         return {i.salt: _FakeClient(salt=i.salt) for i in identities if i.enabled}
 
@@ -334,6 +341,7 @@ def test_reload_state_forwards_derive_fn(monkeypatch, daemon_dir, control_path):
         daemon_dir=daemon_dir,
         global_salt="g",
         derive_fn=sentinel,
+        dry_run=True,
     )
 
     assert captured == [sentinel]
@@ -369,7 +377,7 @@ def _stub_cli_run_side_effects(
     --verbose-hashiverse / --verbose-filtering gating, the call to
     _start_clients_for_identities. That's the surface under test.
     """
-    def capturing_start(identities, identity_dirs, global_salt, *, derive_fn):
+    def capturing_start(identities, identity_dirs, global_salt, *, derive_fn, dry_run):
         captured_derive_fns.append(derive_fn)
         return {}
 

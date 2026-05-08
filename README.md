@@ -176,6 +176,7 @@ A **cross-identity duplicate-source warning** fires at load time if the same RSS
     │   └── control.yaml.meta.json                # {url, etag, last_modified, fetched_at}
     ├── <local_salt_A>/                           # per-identity dir (named after the salt)
     │   ├── client_id.hex                         # cached client_id; skipping argon2 on restart
+    │   ├── last_bio.json                         # last bio sent to hashiverse — gates set_bio (production only writes here)
     │   └── (hashiverse client data dir — encrypted with NEWS_AGENT_GLOBAL_SALT)
     └── <local_salt_B>/
         └── ...
@@ -233,6 +234,8 @@ After first creation, the resulting `client_id` is written to `<identity_dir>/cl
 The cached file is named `client_id.hex`, NOT `public_key.hex`. (An older version of the hashiverse-client API called this "public_key"; the current API correctly calls it `client_id_hex`. We renamed accordingly.)
 
 Argon2 parameters are deliberately aggressive — the handover-to-publisher flow leaks derived keyphrases by design, so the operator's `GLOBAL_SALT` must remain expensive to brute-force even when the attacker holds both the control file (with `local_salt`) and a handed-over keyphrase.
+
+**Bio cache.** Each identity dir also contains `last_bio.json` capturing the most recent bio (`nickname` / `status` / `selfie` / `avatar`) actually sent to hashiverse. On client startup `hashiverse_setup.update_bio_if_changed` compares the current `IdentityConfig` bio fields against this cache and only calls `client.set_bio(...)` when something differs — hashiverse emits a fresh meta-post on every `set_bio` call regardless of payload, so de-duping at the daemon layer prevents redundant meta-posts on every restart and reload. Two further gates: (a) **dry-run mode does not call `set_bio`** at all (it just logs a `[DRY-RUN] would send bio update` line) and **does not update the cache** — that way switching from dry-run to `--production` cleanly resends. (b) Delete `last_bio.json` to force a re-send on next production startup — the manual escape hatch.
 
 ---
 
@@ -349,17 +352,7 @@ The random suggestion is a fresh URL-safe-base64 string (cryptographically rando
 
 ---
 
-## 11. Pending / known TODOs
-
-### Bio updates
-
-`hashiverse_setup.start_hashiverse_client_for_identity` brings up the client but does NOT call `client.set_bio(nickname, status, selfie, ...)`. The control file's `nickname` / `status` / `selfie` fields are read into the `IdentityConfig` and then ignored beyond identity-label formatting.
-
-To wire this up: after client startup, call `client.set_bio(...)` with the YAML values. The hashiverse client de-dupes identical bio updates so calling it on every restart is fine. Adding to the reload path makes nickname/status edits take effect on the network.
-
----
-
-## 12. Style + conventions
+## 11. Style + conventions
 
 - Python 3.11+. Type hints throughout. `from __future__ import annotations` at the top of every module.
 - Strings double-quoted (`"foo"`).
@@ -369,7 +362,7 @@ To wire this up: after client startup, call `client.set_bio(...)` with the YAML 
 
 ---
 
-## 13. The hashiverse-client Python API (cheat-sheet)
+## 12. The hashiverse-client Python API (cheat-sheet)
 
 `pip install hashiverse-client`. Current public surface used by news-agent:
 
@@ -420,7 +413,7 @@ The Rust client carries a tokio runtime internally; dropping all references to t
 
 ---
 
-## 14. For Claude Code: quick pointers when picking up the next chunk
+## 13. For Claude Code: quick pointers when picking up the next chunk
 
 - **Run the test suite** before doing anything to confirm baseline green.
 - The user is iterating the daemon block-by-block. Each block is one logical concern; don't extrapolate across blocks unless invited.

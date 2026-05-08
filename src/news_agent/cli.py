@@ -297,6 +297,7 @@ def run(
             identity_dirs,
             salt.raw_value,
             derive_fn=derive_fn,
+            dry_run=dry_run,
         )
 
         stop_event = threading.Event()
@@ -315,6 +316,7 @@ def run(
                 daemon_dir=daemon_dir,
                 global_salt=salt.raw_value,
                 derive_fn=derive_fn,
+                dry_run=dry_run,
             )
             # Always set: even if _reload_state silently kept the previous
             # state (parse error), waking the runner is harmless — it'll
@@ -411,6 +413,7 @@ def _reload_state(
     daemon_dir: Path,
     global_salt: str,
     derive_fn: Callable[[str, str], str],
+    dry_run: bool,
 ) -> None:
     """Re-parse the control file and fully rebuild the in-memory state.
 
@@ -455,6 +458,7 @@ def _reload_state(
         new_identity_dirs,
         global_salt,
         derive_fn=derive_fn,
+        dry_run=dry_run,
     )
     clients.update(new_clients)
 
@@ -468,12 +472,17 @@ def _start_clients_for_identities(
     global_salt: str,
     *,
     derive_fn: Callable[[str, str], str],
+    dry_run: bool,
 ) -> dict[str, object]:
     """Start one hashiverse client per enabled identity.
 
     Disabled identities are noted in the log and skipped — their data dir
     already exists, but the daemon won't bring up a client for them. Returns
     a mapping of ``identity.salt`` to the resulting client.
+
+    ``dry_run`` is forwarded to ``start_hashiverse_client_for_identity`` so
+    the per-identity bio sync gates ``set_bio`` calls behind production mode
+    (dry-run logs would-be sends instead).
     """
     dirs_by_salt = {d.path.name: d for d in identity_dirs}
     clients: dict[str, object] = {}
@@ -489,6 +498,7 @@ def _start_clients_for_identities(
             identity_dir=identity_dir.path,
             global_salt=global_salt,
             derive_fn=derive_fn,
+            dry_run=dry_run,
         )
         clients[identity.salt] = client
         logger.info(

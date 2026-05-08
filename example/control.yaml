@@ -16,7 +16,7 @@ identities:
     nickname: "Tesla FSD & Robotaxi news (news-agent)"
     status: "News about the progress of Tesla's FSD and robotaxi businesses."
     enabled: true
-    max_posts_per_day: 1920
+    max_posts_per_day: 24
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC4DBLlq1x0AKmip1QJUcbXg  # Brighter with Herbert
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCgbyN_o-Guwpyqfuuz3pyIw  # Farzad
@@ -40,7 +40,7 @@ identities:
       - https://jalopnik.com/category/evs-and-hybrids/feed
       - https://www.topspeed.com/feed/
       - https://www.autocar.co.uk/rss
-    hashtags: []
+    hashtags: ["tesla", "fsd", "robotaxi"]
     keywords_required: ["tesla"]
     keywords_optional: ["fsd", "cybercab", "robotaxi"]
 
@@ -121,6 +121,26 @@ identities:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCTpmmkp1E4nmZqWPS-dl5bg  # Quanta Science Channel
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCRhV1rWIpm_pU19bBm_2RXw  # Sean Carroll
     hashtags: ["science"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "9c3a7e1f6b8d2c5a4e9f7b1d3c6a8e2f5b9d4c7a1e6f8b3d2c5a9e4f7b1d6c8a"
+    nickname: "Indie gamedev devlogs (news-agent)"
+    status: "Devlogs and creator stories from the top indie game developers on YouTube."
+    enabled: true
+    max_posts_per_day: 24
+    sources:
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCmtyQOKKmrMVaKuRXz02jbQ  # Sebastian Lague
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCMnULQ6F6kLDAHxofDWIbrw  # Pirate Software
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCIabPXjvT5BVTxRDPCBBOOQ  # Dani
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCUkRj4qoT1bsWpE_C8lZYoQ  # ThinMatrix
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC_p_9arduPuxM8DHTGIuSOg  # Jonas Tyroller
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCdXUwmzmhitTRqtPLazyetg  # Goodgis
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC9Z1XWw1kmnvOOFsj6Bzy2g  # Blackthornprod
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCORaUhZVpg7yhxJeaPSTGmQ  # Pontypants
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCaoqVlqPTH78_xjTjTOMcmQ  # Miziziziz
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCQG40havu4kNpB4pxUDQhYQ  # Acerola
+    hashtags: ["gamedev"]
     keywords_required: []
     keywords_optional: []
 
