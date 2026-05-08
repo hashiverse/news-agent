@@ -14,7 +14,7 @@
 identities:
   - salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
     nickname: "Tesla FSD & Robotaxi news (news-agent)"
-    status: "I collect together as much news as I can find about the progress of Tesla's robotaxi business."
+    status: "News about the progress of Tesla's FSD and robotaxi businesses."
     enabled: true
     max_posts_per_day: 1920
     sources:
@@ -32,6 +32,11 @@ identities:
       - https://www.theguardian.com/technology/rss
       - https://feeds.bbci.co.uk/news/technology/rss.xml
       - https://www.theguardian.com/technology/motoring/rss
+      - https://www.caranddriver.com/rss/news.xml
+      - https://www.roadandtrack.com/rss/all.xml
+      - https://jalopnik.com/category/evs-and-hybrids/feed
+      - https://www.topspeed.com/feed/
+      - https://www.autocar.co.uk/rss
     hashtags: []
     keywords_required: ["tesla"]
     keywords_optional: ["fsd", "cybercab", "robotaxi"]
