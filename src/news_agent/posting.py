@@ -44,6 +44,7 @@ from hashiverse_client import (
 from news_agent.config import IdentityConfig
 from news_agent.posts_db import record_post
 from news_agent.rss_parser import Article
+from news_agent.text_utils import strip_html
 from news_agent.url_preview import UrlPreviewData, fetch_url_preview
 
 logger = logging.getLogger(__name__)
@@ -73,10 +74,16 @@ def format_post_html(
     # Always show *something* clickable: prefer the OG title, fall back to
     # the article title, and to the URL itself if both are somehow blank.
     title = preview.title or article.title or url
+    # Description: prefer the OG/twitter/meta description from the page, but
+    # fall back to the RSS feed's own <description> (article.summary) — many
+    # news sites omit OG tags, and the feed almost always carries a summary.
+    # The summary may contain HTML markup; strip it so the description div
+    # renders as clean text rather than literal `<p>` tags.
+    description = preview.description or strip_html(article.summary)
 
     body = convert_text_to_hashiverse_html_x_url_preview(
         title=title,
-        description=preview.description,
+        description=description,
         image_url=preview.image_url,
         url=url,
     )
@@ -86,6 +93,8 @@ def format_post_html(
         )
         body = f"{body}<p/>{tags_html}"
     return body
+
+
 
 
 def _fetch_preview_safely(url: str, log_label: str) -> UrlPreviewData:

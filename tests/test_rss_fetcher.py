@@ -199,3 +199,46 @@ def test_cache_replaces_on_200(conn):
     cached = get_cached(conn, url)
     assert cached.body == b"<rss>NEW</rss>"
     assert cached.etag == '"new"'
+
+
+# ---------------------------------------------------------------------------
+# Operator-visible logging — both the network-fetch path and the cache-hit
+# path must log at INFO so the operator can tell whether the cache is
+# actually being used.
+
+
+def test_logs_downloaded_marker_on_200_response(conn, caplog):
+    handler = _make_handler(body=b"<rss>DATA</rss>", etag='"v1"')
+    with _running_server(handler) as base:
+        url = f"{base}/feed.xml"
+        with caplog.at_level("INFO", logger="news_agent.rss_fetcher"):
+            fetch_feed_body(url, conn, now_unix=1000)
+    matching = [r.getMessage() for r in caplog.records if "fetched" in r.getMessage()]
+    assert len(matching) == 1
+    assert "downloaded" in matching[0]
+    assert "from cache" not in matching[0]
+
+
+def test_logs_from_cache_marker_on_304_response(conn, caplog):
+    """Regression: a cache hit must be visible at INFO level — previously
+    the 304 path logged at DEBUG, making the cache appear unused."""
+    handler = _make_handler(body=b"<rss/>", etag='"v1"')
+    with _running_server(handler) as base:
+        url = f"{base}/feed.xml"
+        save_cache(
+            conn,
+            source_url=url,
+            body=b"<rss>CACHED</rss>",
+            etag='"v1"',
+            last_modified=None,
+            fetched_at_unix=500,
+        )
+        with caplog.at_level("INFO", logger="news_agent.rss_fetcher"):
+            body = fetch_feed_body(url, conn, now_unix=1000)
+    assert body == b"<rss>CACHED</rss>"
+    matching = [r.getMessage() for r in caplog.records if "fetched" in r.getMessage()]
+    assert len(matching) == 1
+    msg = matching[0]
+    assert "from cache" in msg
+    assert "age 500s" in msg
+    assert "downloaded" not in msg

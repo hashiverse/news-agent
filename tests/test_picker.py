@@ -274,3 +274,112 @@ def test_keyword_substring_does_match_within_word():
     a = _fresh_article(url="https://x/a", title="Building trust in distributed systems")
     chosen = _pick([a], keywords_required=("rust",))
     assert chosen is a
+
+
+def test_keyword_only_in_hashtag_dump_is_rejected():
+    """Keywords that appear ONLY inside `#tag` tokens (typically in YouTube-style
+    SEO blocks) must NOT cause the article to match — those tokens are stripped
+    before substring search."""
+    a = _fresh_article(
+        url="https://x/a",
+        title="Tesla competition piece",
+        summary=(
+            "Tesla's competitors are spending enormous amounts of money. "
+            "Some viewers ask where to learn more. "
+            "#Tesla #robotaxi #FSD #autonomousdriving"
+        ),
+    )
+    # `robotaxi` lives only in the trailing hashtag soup → rejected.
+    assert _pick([a], keywords_required=("tesla", "robotaxi")) is None
+    # `tesla` is plain text in title + first sentence → picked.
+    assert _pick([a], keywords_required=("tesla",)) is a
+
+
+def test_keyword_match_uses_full_summary_not_just_first_sentence():
+    """Plain text anywhere in the summary should match — the lead sentence
+    on YouTube channels is often a sponsor URL block, not the topic."""
+    a = _fresh_article(
+        url="https://x/a",
+        title="Generic headline",
+        summary=(
+            "Sponsor URL: https://example.com/affiliate. "
+            "In this video we discuss the Rust async story in detail."
+        ),
+    )
+    chosen = _pick([a], keywords_required=("rust",))
+    assert chosen is a
+
+
+def test_keyword_match_strips_html_from_summary():
+    """RSS summaries wrapped in <p> tags still match against the visible text."""
+    a = _fresh_article(
+        url="https://x/a",
+        title="Generic headline",
+        summary="<p>Rust async patterns explained.</p><p>Bonus #robotaxi tag.</p>",
+    )
+    # `rust` is in the first paragraph as plain text → picked.
+    assert _pick([a], keywords_required=("rust",)) is a
+    # `robotaxi` lives only inside `#robotaxi` → stripped before match → rejected.
+    assert _pick([a], keywords_required=("rust", "robotaxi")) is None
+
+
+def test_keyword_match_against_short_single_line_summary():
+    """Short summaries with no punctuation still match correctly."""
+    a = _fresh_article(
+        url="https://x/a",
+        title="Generic headline",
+        summary="A long discussion of Rust internals",
+    )
+    chosen = _pick([a], keywords_required=("rust",))
+    assert chosen is a
+
+
+def test_keyword_match_strips_hashtags_from_title_too():
+    """Hashtag-stripping applies to the whole haystack — including the title.
+    A title like `#Rust matters in 2026` has the topic-bearing word inside a
+    hashtag token, which gets stripped, so the keyword `rust` no longer
+    matches via the title. (Authors who care about being matched should use
+    plain words, not hashtags, in their titles.)"""
+    a = _fresh_article(
+        url="https://x/a",
+        title="#Rust matters in 2026",
+        summary="",
+    )
+    assert _pick([a], keywords_required=("rust",)) is None
+    # But a plain-word title is fine.
+    b = _fresh_article(url="https://x/b", title="Rust matters in 2026", summary="")
+    assert _pick([b], keywords_required=("rust",)) is b
+
+
+def test_keyword_rejection_logs_required_misses_and_haystack(caplog):
+    """Operators debugging a too-strict filter need to see WHAT was tried."""
+    a = _fresh_article(url="https://x/a", title="Cooking with cheese")
+    with caplog.at_level("INFO", logger="news_agent.picker"):
+        chosen = _pick([a], keywords_required=("rust", "async"))
+    assert chosen is None
+    rejections = [r.getMessage() for r in caplog.records if "keyword filter rejected" in r.getMessage()]
+    assert len(rejections) == 1
+    msg = rejections[0]
+    assert "Cooking with cheese" in msg
+    assert "rust" in msg
+    assert "async" in msg
+    assert "haystack=" in msg
+
+
+def test_keyword_rejection_logs_optional_miss(caplog):
+    a = _fresh_article(url="https://x/a", title="Cooking with cheese")
+    with caplog.at_level("INFO", logger="news_agent.picker"):
+        chosen = _pick([a], keywords_optional=("rust", "wasm"))
+    assert chosen is None
+    rejections = [r.getMessage() for r in caplog.records if "keyword filter rejected" in r.getMessage()]
+    assert len(rejections) == 1
+    assert "no optional keyword" in rejections[0]
+
+
+def test_keyword_acceptance_does_not_log_rejection(caplog):
+    """When the article passes, no rejection log line is emitted."""
+    a = _fresh_article(url="https://x/a", title="A piece on rust")
+    with caplog.at_level("INFO", logger="news_agent.picker"):
+        chosen = _pick([a], keywords_required=("rust",))
+    assert chosen is a
+    assert not any("keyword filter rejected" in r.getMessage() for r in caplog.records)

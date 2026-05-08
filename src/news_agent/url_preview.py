@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
-MAX_BODY_BYTES = 512 * 1024
+MAX_BODY_BYTES = 2 * 1024 * 1024
 USER_AGENT = "news-agent/0.1 (+https://github.com/hashiverse/news-agent)"
 
 

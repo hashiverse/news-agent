@@ -86,12 +86,20 @@ def fetch_feed_body(
             last_modified=last_modified,
             fetched_at_unix=now_unix,
         )
-        logger.info("fetched %s (%d bytes)", source_url, len(body))
+        logger.info(
+            "fetched %s (%d bytes, downloaded)", source_url, len(body)
+        )
         return body
     except urllib.error.HTTPError as exc:
         if exc.code == 304 and cached is not None:
             update_fetched_at(conn, source_url, now_unix)
-            logger.debug("304 not modified: %s", source_url)
+            cache_age = max(0, now_unix - cached.fetched_at_unix)
+            logger.info(
+                "fetched %s (%d bytes, from cache, age %ds, 304 not modified)",
+                source_url,
+                len(cached.body),
+                cache_age,
+            )
             return cached.body
         return _fall_back_or_raise(source_url, cached, f"HTTP {exc.code}")
     except (urllib.error.URLError, OSError) as exc:

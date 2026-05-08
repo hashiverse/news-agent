@@ -126,9 +126,76 @@ def test_format_post_html_without_image_moves_domain_into_inner_column():
 
 
 def test_format_post_html_omits_description_div_when_description_blank():
+    """No OG description AND no RSS summary → no description div at all."""
     preview = UrlPreviewData(title="OG Title")  # no description
-    html_body = format_post_html(_article(), preview)
+    bare_article = Article(
+        title="An article",
+        canonical_url="https://example.com/article",
+        raw_url="https://example.com/article",
+        item_guid="urn:1",
+        summary="",  # explicitly empty
+        published_at_unix=1_000_000,
+        source_url="https://feed.example/rss",
+    )
+    html_body = format_post_html(bare_article, preview)
     assert "plugin-urlpreview-card-description" not in html_body
+
+
+def test_format_post_html_falls_back_to_article_summary_when_preview_description_blank():
+    """If the page has no OG description, use the RSS feed's <description>."""
+    article = Article(
+        title="An article",
+        canonical_url="https://example.com/article",
+        raw_url="https://example.com/article",
+        item_guid="urn:1",
+        summary="A concise feed summary that the RSS provider gave us.",
+        published_at_unix=1_000_000,
+        source_url="https://feed.example/rss",
+    )
+    preview = UrlPreviewData(title="OG Title")  # no description on the page
+    html_body = format_post_html(article, preview)
+    assert (
+        '<div class="plugin-urlpreview-card-description">'
+        'A concise feed summary that the RSS provider gave us.'
+        '</div>'
+    ) in html_body
+
+
+def test_format_post_html_strips_html_from_article_summary_fallback():
+    """RSS summaries often contain markup — strip it so the card renders cleanly."""
+    article = Article(
+        title="An article",
+        canonical_url="https://example.com/article",
+        raw_url="https://example.com/article",
+        item_guid="urn:1",
+        summary="<p>First paragraph.</p>\n<p>Second &amp; sentence.</p>",
+        published_at_unix=1_000_000,
+        source_url="https://feed.example/rss",
+    )
+    html_body = format_post_html(article, UrlPreviewData(title="t"))
+    assert (
+        '<div class="plugin-urlpreview-card-description">'
+        'First paragraph. Second &amp; sentence.'
+        '</div>'
+    ) in html_body
+    # The literal `<p>` markup must NOT appear (would render as text otherwise).
+    assert ">&lt;p&gt;" not in html_body
+
+
+def test_format_post_html_preview_description_takes_precedence_over_summary():
+    article = Article(
+        title="An article",
+        canonical_url="https://example.com/article",
+        raw_url="https://example.com/article",
+        item_guid="urn:1",
+        summary="RSS summary fallback",
+        published_at_unix=1_000_000,
+        source_url="https://feed.example/rss",
+    )
+    preview = UrlPreviewData(title="t", description="OG description wins")
+    html_body = format_post_html(article, preview)
+    assert ">OG description wins<" in html_body
+    assert "RSS summary fallback" not in html_body
 
 
 def test_format_post_html_falls_back_to_article_title_when_preview_title_blank():
@@ -347,12 +414,12 @@ def test_real_run_posts_anyway_when_preview_fetch_fails(conn, caplog, monkeypatc
     assert len(client.posts) == 1
     body = client.posts[0]
     # Card still renders, with article.title as the fallback link text and the
-    # raw URL as href. No image-container, no description.
+    # raw URL as href. No image-container (preview fetch failed → no image_url).
+    # The description div picks up the article.summary fallback.
     assert '<div class="plugin-urlpreview-card">' in body
     assert 'href="https://example.com/article?utm_source=x"' in body
     assert ">An article</a>" in body
     assert "plugin-urlpreview-card-image-container" not in body
-    assert "plugin-urlpreview-card-description" not in body
     assert any(
         "fetch_url_preview failed" in record.message for record in caplog.records
     )

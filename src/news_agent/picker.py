@@ -9,7 +9,8 @@ Pure function. The caller passes:
 - ``now_unix`` for the recency filter,
 - a seeded :class:`random.Random` for the random pick,
 - optional keyword filters (``keywords_required`` / ``keywords_optional``)
-  that are case-insensitive substring matches against the title + summary.
+  that are case-insensitive substring matches against the title plus the
+  full summary, with HTML and ``#hashtag`` tokens stripped first.
 
 Eligibility rules:
 
@@ -19,10 +20,16 @@ Eligibility rules:
    verify they're recent.
 2. The article's canonical URL is NOT in the recently-posted set.
 3. If ``keywords_required`` is non-empty, ALL of its entries must appear
-   somewhere in the article's title or summary (case-insensitive substring).
+   somewhere in the cleaned haystack (case-insensitive substring).
 4. If ``keywords_optional`` is non-empty, AT LEAST ONE of its entries must
-   appear in the title or summary (case-insensitive substring).
-   Either filter being empty means that check is skipped.
+   appear in the cleaned haystack. Either filter being empty means that
+   check is skipped.
+
+The haystack is built as ``title + " " + strip_html(summary)``, then run
+through ``strip_hashtags`` to remove SEO/hashtag dumps that would otherwise
+cause false positives — common on YouTube descriptions, e.g.
+``... #robotaxi #Tesla #FSD #autonomousdriving``. Plain words in the
+narrative text still match normally.
 
 If multiple articles are eligible, one is chosen uniformly at random.
 Returns ``None`` when nothing is eligible.
@@ -30,11 +37,19 @@ Returns ``None`` when nothing is eligible.
 
 from __future__ import annotations
 
+import logging
 import random
 from collections.abc import Sequence
 
 from news_agent.posts_db import ONE_DAY_SECONDS
 from news_agent.rss_parser import Article
+from news_agent.text_utils import strip_hashtags, strip_html
+
+logger = logging.getLogger(__name__)
+
+# Truncate the haystack in log lines so long lead sentences don't dominate
+# the operator's terminal.
+_HAYSTACK_LOG_CAP = 240
 
 
 def pick_article(
@@ -86,9 +101,33 @@ def _is_eligible(
         # almost certainly a feed bug. Skip.
         return False
     if keywords_required or keywords_optional:
-        haystack = f"{article.title} {article.summary}".lower()
-        if keywords_required and not all(kw in haystack for kw in keywords_required):
-            return False
+        # Strip HTML so we match the visible text only, then strip `#tag`
+        # tokens so SEO/hashtag dumps (`... #tesla #robotaxi #FSD`) can't
+        # cause false positives. Plain words still match normally.
+        summary_clean = strip_html(article.summary)
+        haystack = strip_hashtags(f"{article.title} {summary_clean}").lower()
+        if keywords_required:
+            missing = [kw for kw in keywords_required if kw not in haystack]
+            if missing:
+                logger.info(
+                    "keyword filter rejected %r: required %s missing; haystack=%r",
+                    article.title,
+                    missing,
+                    _truncate_for_log(haystack),
+                )
+                return False
         if keywords_optional and not any(kw in haystack for kw in keywords_optional):
+            logger.info(
+                "keyword filter rejected %r: no optional keyword in %s matched; haystack=%r",
+                article.title,
+                list(keywords_optional),
+                _truncate_for_log(haystack),
+            )
             return False
     return True
+
+
+def _truncate_for_log(text: str) -> str:
+    if len(text) <= _HAYSTACK_LOG_CAP:
+        return text
+    return text[: _HAYSTACK_LOG_CAP - 1] + "…"

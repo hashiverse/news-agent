@@ -294,6 +294,10 @@ def test_fetch_url_preview_happy_path_via_monkeypatched_fetcher(monkeypatch):
     assert out.url == "https://example.com/x"
 
 
-def test_fetch_url_preview_default_max_bytes_is_512k():
-    """Sanity-check the cap matches the Rust server side."""
-    assert MAX_BODY_BYTES == 512 * 1024
+def test_fetch_url_preview_default_max_bytes_is_2mb():
+    """Pin the cap so any future change is intentional. 2 MB clears the
+    YouTube watch-page case (OG meta tags live around byte 635 KB, behind
+    ~600 KB of inline `<script>` blobs); the Rust server side uses a tighter
+    512 KB cap, but news-agent is a long-running daemon and 2 MB per fetch
+    is fine."""
+    assert MAX_BODY_BYTES == 2 * 1024 * 1024

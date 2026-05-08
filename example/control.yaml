@@ -16,11 +16,16 @@ identities:
     nickname: "Hashiverse news-agent: Tesla Robotaxi news"
     status: "I collect together as much news as I can find about the progress of Tesla's robotaxi business."
     enabled: true
-    max_posts_per_day: 96
+    max_posts_per_day: 192
     sources:
-      #- https://www.youtube.com/feeds/videos.xml?channel_id=UC4DBLlq1x0AKmip1QJUcbXg
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC4DBLlq1x0AKmip1QJUcbXg
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCgbyN_o-Guwpyqfuuz3pyIw
+      - https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml
+      - https://www.theguardian.com/technology/rss
+      - https://feeds.bbci.co.uk/news/technology/rss.xml
+      - https://www.telegraph.co.uk/technology/rss.xml
+      - https://rss.nytimes.com/services/xml/rss/nyt/Automobiles.xml
     hashtags: []
-    keywords_required: ["tesla", "robotaxi"]
+    keywords_required: ["tesla"]
     keywords_optional: []
 

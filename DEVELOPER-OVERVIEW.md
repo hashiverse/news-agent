@@ -180,8 +180,8 @@ identities:
 | `enabled` | no (true) | Soft-pause without removing the identity. |
 | `max_posts_per_day` | yes | Per-identity cap. |
 | `sources` | yes | RSS URLs, non-empty list. The complete scope of what this identity mirrors. |
-| `keywords_required` | no (empty) | Case-insensitive substring filter against title + summary. **All** entries must appear for the article to be eligible. Empty/absent → no filter. |
-| `keywords_optional` | no (empty) | Same shape as `keywords_required`, but **at least one** entry must appear. Empty/absent → no filter. Combine with `keywords_required` to AND together (e.g. require `rust`, *and* require any of `async`/`wasm`). |
+| `keywords_required` | no (empty) | Case-insensitive substring filter against the article's title + summary. **All** entries must appear in the cleaned haystack for the article to be eligible. The haystack has HTML stripped (so `<p>` markup doesn't break things) and `#tag` tokens removed (so SEO/hashtag dumps like `#tesla #robotaxi #FSD` can't cause false positives). Empty/absent → no filter. |
+| `keywords_optional` | no (empty) | Same shape as `keywords_required`, but **at least one** entry must appear in the cleaned haystack. Empty/absent → no filter. Combine with `keywords_required` to AND together (e.g. require `rust`, *and* require any of `async`/`wasm`). |
 
 Deliberately **not** in the schema:
 - No `name` field (salt is unique).
@@ -315,7 +315,7 @@ The `plugin-urlpreview-card*` CSS classes are styled by the consuming client at 
 |---|---|
 | `url` | `preview.url` → `article.raw_url` |
 | `title` | `preview.title` → `article.title` → `url` |
-| `description` | `preview.description` (Rust omits div if blank) |
+| `description` | `preview.description` → `_strip_html(article.summary)` (Rust omits div if both blank) |
 | `image_url` | `preview.image_url` (Rust omits image branch if blank) |
 
 **Preview fetching.** Before posting we call `news_agent.url_preview.fetch_url_preview(url)`, which fetches the page directly via `urllib.request` (HTTPS-only, 512 KB cap, custom UA — stdlib only, no new runtime dependencies) and parses OG / twitter-card / `<title>` / `<link rel="canonical">` tags via `html.parser.HTMLParser`. The fallback chain matches `hashiverse-lib/src/tools/url_preview.rs` exactly:
