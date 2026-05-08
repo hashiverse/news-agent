@@ -48,7 +48,7 @@ class _FakeClient:
         self.client_id = client_id
         self.posted: list[str] = []
 
-    def post_without_preprocessing(self, html_body: str) -> None:
+    def submit_post(self, html_body: str) -> None:
         self.posted.append(html_body)
 
 

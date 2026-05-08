@@ -280,13 +280,41 @@ Cross-identity dedupe key: **canonical URL**, after normalisation in `url_canoni
 
 Posts (real and dry-run) are written to the `posts` table. Dry-run rows have `is_dry_run=1` and `hashiverse_post_id=NULL`. They count toward dedupe and per-identity caps so the scheduler doesn't pick the same article twice across modes.
 
-### 9.1 Post body format — URL preview card
+### 9.1 Post body format
 
-Every post we send is hashiverse-flavoured HTML with two parts: the article's title (HTML-escaped, newlines → `<br>`) followed by `<br><br>` and a fully-rendered URL preview card.
+Every post is hashiverse-flavoured HTML composed by the daemon from Rust-built fragments. The shape:
 
-**Why "fully-rendered"**: the web client's Tiptap editor uses a `<urlpreview ...>` element internally, but that's an editor-only artifact — Tiptap plugins only run while a post is being *edited*. When other clients *view* a post they render plain HTML, so the on-wire format is the structural HTML that the editor's `build_card_dom` (in `hashiverse-client-web/src/tabs/compose/UrlPreviewExtension.ts`) emits at save time. The `plugin-urlpreview-card*` CSS classes are styled by the consuming client at view time — we just need to use them, no inline styles.
+```
+<div class="plugin-urlpreview-card">…</div>           # always present
+<p/>                                                   # only when hashtags is non-empty
+<hashtag …>…</hashtag> <hashtag …>…</hashtag>          # one per identity hashtag
+```
 
-Before posting we call `news_agent.url_preview.fetch_url_preview(url)`, which fetches the page directly via `urllib.request` (HTTPS-only, 512 KB cap, custom UA — no new runtime dependencies) and parses OG / twitter-card / `<title>` / `<link rel="canonical">` tags via `html.parser.HTMLParser`. The fallback chain matches `hashiverse-lib/src/tools/url_preview.rs` exactly:
+There is no separate article-title prefix — the title lives inside the preview card as the link text.
+
+**Single source of truth for the canonical schema lives in Rust**, in `hashiverse-rust/hashiverse-lib/src/tools/plain_text_post.rs`. The PyO3 wrapper exposes free functions that delegate straight to those Rust impls; news-agent calls them and concatenates the output:
+
+| Python free function | Rust impl |
+|---|---|
+| `convert_text_to_hashiverse_html_x_url_preview(title, description, image_url, url)` | builds `<div class="plugin-urlpreview-card">…</div>`, with-image vs without-image branching, description div omitted when blank, domain extracted from URL |
+| `convert_text_to_hashiverse_html_x_hashtag(hashtag)` | builds the `<hashtag hashtag="…"><span class="plugin-hashtag-left">#</span><span class="plugin-hashtag-right">…</span></hashtag>` element |
+| `convert_text_to_hashiverse_html_x_mention(client_id)` | builds `<mention client_id="…"></mention>` |
+| `convert_text_to_hashiverse_html(text)` | full preprocessor: html-escape + hashtag + mention + newline → `<br>` |
+
+The `plugin-urlpreview-card*` CSS classes are styled by the consuming client at view time — Rust just emits the structural HTML, no inline styles. Tiptap plugins only run while *editing*; view-time consumers see plain HTML, which is why we emit the structural form rather than the editor's `<urlpreview …>` placeholder.
+
+`news-agent` submits the composed body via `client.submit_post(html)` (the renamed Rust method, no preprocessing magic on the wrapper).
+
+**Field resolution** happens Python-side in `posting.format_post_html`:
+
+| Card field passed to Rust | Fallback chain |
+|---|---|
+| `url` | `preview.url` → `article.raw_url` |
+| `title` | `preview.title` → `article.title` → `url` |
+| `description` | `preview.description` (Rust omits div if blank) |
+| `image_url` | `preview.image_url` (Rust omits image branch if blank) |
+
+**Preview fetching.** Before posting we call `news_agent.url_preview.fetch_url_preview(url)`, which fetches the page directly via `urllib.request` (HTTPS-only, 512 KB cap, custom UA — stdlib only, no new runtime dependencies) and parses OG / twitter-card / `<title>` / `<link rel="canonical">` tags via `html.parser.HTMLParser`. The fallback chain matches `hashiverse-lib/src/tools/url_preview.rs` exactly:
 
 | Field | Fallback chain |
 |---|---|
@@ -295,52 +323,9 @@ Before posting we call `news_agent.url_preview.fetch_url_preview(url)`, which fe
 | `image_url` | `meta[property='og:image']` → `meta[name='twitter:image']` → `meta[name='twitter:image:src']` |
 | `url` | `meta[property='og:url']` → `<link rel='canonical' href=…>` (note: `href`, not `content`) |
 
-Doing it locally saves one round-trip per post against shared hashiverse-network resources. Dry-run skips the fetch. If the fetch fails (non-HTTPS URL, network error, parse failure), the post still goes out — `posting._fetch_preview_safely` logs a warning and returns blanks, and the card falls back to `article.title` as the link text with no image / no description.
+Doing it locally saves one round-trip per post against shared hashiverse-network resources. **Dry-run does the same fetch + HTML construction as a real post** and logs the body — the whole point of dry-run is the operator sees exactly what would have hit the network. If the fetch fails (non-HTTPS URL, network error, parse failure), the post still goes out — `posting._fetch_preview_safely` logs a warning and returns blanks, and the card falls back to `article.title` as the link text with no image / no description.
 
-The card has two layout branches, mirroring `build_card_dom`:
-
-**With an image** (`preview.image_url` non-blank):
-
-```html
-<div class="plugin-urlpreview-card">
-  <div class="plugin-urlpreview-card-image-container">
-    <img src="<image_url>" alt="" class="plugin-urlpreview-card-image unblur-image">
-    <div class="plugin-urlpreview-card-domain"><domain></div>
-  </div>
-  <div class="plugin-urlpreview-card-inner">
-    <a class="plugin-urlpreview-card-title" href="<url>" rel="noopener noreferrer nofollow"><title></a>
-    <div class="plugin-urlpreview-card-description"><description></div>
-  </div>
-</div>
-```
-
-**Without an image** (`preview.image_url` blank): no `image-container`; the domain label moves *inside* `plugin-urlpreview-card-inner`, above the title link:
-
-```html
-<div class="plugin-urlpreview-card">
-  <div class="plugin-urlpreview-card-inner">
-    <div class="plugin-urlpreview-card-domain"><domain></div>
-    <a class="plugin-urlpreview-card-title" href="<url>" rel="noopener noreferrer nofollow"><title></a>
-    <div class="plugin-urlpreview-card-description"><description></div>
-  </div>
-</div>
-```
-
-The description div is omitted entirely if `preview.description` is blank.
-
-Field resolution at format time (in `posting.format_post_html`):
-
-| Card field | Source (with fallback chain) |
-|---|---|
-| `<url>` (link href) | `preview.url` → `article.raw_url` |
-| `<domain>` | `urlparse(url).hostname` → `url` |
-| `<title>` (link text) | `preview.title` → `article.title` → `url` |
-| `<description>` | `preview.description` (omit div if blank) |
-| `<image_url>` (`<img src>`) | `preview.image_url` (omit image branch if blank) |
-
-Text content is HTML-escaped with `quote=False` (so `&`, `<`, `>` are escaped but `"` passes through — fine inside element bodies). Attribute values use `quote=True` (so `"` becomes `&quot;` and `&` becomes `&amp;` — required to keep attribute parsing well-formed against URLs with query strings, OG titles with quote characters, etc.).
-
-The body is submitted via `client.post_without_preprocessing(html)` — using `post_with_preprocessing` would re-escape every `<` and `>` and destroy the card.
+**Hashtag input handling.** The Rust `_x_hashtag` function is defensive: it accepts either `"rust"` or `"#rust"` (a single leading `#` is stripped before validation). If the remaining text is empty or contains any non-alphanumeric character, it returns the original input *untouched* (an identity no-op) rather than emit a malformed `<hashtag>` element. News-agent therefore doesn't pre-validate identity hashtags — bad ones just render as plain text in the post body, which is a visible-failure-mode the operator can spot in the dry-run output.
 
 ---
 

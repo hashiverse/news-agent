@@ -61,7 +61,7 @@ class _FakeClient:
     def __init__(self) -> None:
         self.posts: list[str] = []
 
-    def post_without_preprocessing(self, html_body: str) -> None:
+    def submit_post(self, html_body: str) -> None:
         self.posts.append(html_body)
 
 
@@ -91,8 +91,8 @@ def test_format_post_html_with_full_preview_renders_image_card():
         image_url="https://img.example/og.png",
     )
     html_body = format_post_html(_article(), preview)
-    # Title from the article comes first, then the card.
-    assert html_body.startswith("An article<br><br><div class=\"plugin-urlpreview-card\">")
+    # Body starts with the preview card directly — no article-title prefix.
+    assert html_body.startswith('<div class="plugin-urlpreview-card">')
     # With image: image-container wraps the img and the domain label.
     assert '<div class="plugin-urlpreview-card-image-container">' in html_body
     assert (
@@ -144,65 +144,59 @@ def test_format_post_html_falls_back_to_article_title_when_preview_title_blank()
 def test_format_post_html_falls_back_to_raw_url_when_preview_url_blank():
     preview = UrlPreviewData(title="OG", description="", image_url="")  # url left blank
     html_body = format_post_html(_article(), preview)
+    # The Rust card builder escapes & in URL attributes, so the raw URL's `&`
+    # (none here) and `?` pass through; non-empty domain comes from urlparse.
     assert 'href="https://example.com/article?utm_source=x"' in html_body
 
 
 def test_format_post_html_html_escapes_special_chars():
-    article = Article(
-        title='Quote "marker" & <html>',
-        canonical_url="https://example.com/article",
-        raw_url="https://example.com/article",
-        item_guid="urn:1",
-        summary="x",
-        published_at_unix=1_000_000,
-        source_url="https://feed.example/rss",
-    )
+    """Rust _x_url_preview always escapes &, <, >, " in both attributes and
+    text content (using the file-private html_escape in plain_text_post.rs)."""
     preview = UrlPreviewData(
         title='He said "hi" & ran',
         description="<script>alert(1)</script>",
         image_url="https://img.example/o?a=1&b=2",
+        url="https://example.com/?q=1&r=2",
     )
-    html_body = format_post_html(article, preview)
-    # Article-title body text: quote=False → " left as-is, & < > escaped.
-    assert "Quote \"marker\" &amp; &lt;html&gt;" in html_body
-    # Title link text: quote=False so quotes pass through; & < > escaped.
-    assert ">He said \"hi\" &amp; ran</a>" in html_body
+    html_body = format_post_html(_article(), preview)
+    # Title link text: " is escaped to &quot; (Rust's html_escape is broader
+    # than Python's html.escape(quote=False)).
+    assert ">He said &quot;hi&quot; &amp; ran</a>" in html_body
     # Description text content: < > escaped to prevent injection.
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html_body
-    # Image URL in attribute: quote=True so & is escaped to &amp;.
+    # Image URL in src attribute: & escaped to &amp;.
     assert 'src="https://img.example/o?a=1&amp;b=2"' in html_body
+    # Article URL in href attribute: same.
+    assert 'href="https://example.com/?q=1&amp;r=2"' in html_body
 
 
-def test_format_post_html_appends_hashtags_when_provided():
+def test_format_post_html_appends_hashtag_elements_when_provided():
+    """Hashtags become <hashtag> elements separated by spaces, after a <p/>."""
     html_body = format_post_html(_article(), UrlPreviewData(), hashtags=("news", "world"))
-    assert html_body.endswith("<br><br>#news #world")
+    assert "<p/>" in html_body
+    # Each hashtag becomes a full <hashtag> element (no plain "#tag" text).
+    assert '<hashtag hashtag="news">' in html_body
+    assert '<hashtag hashtag="world">' in html_body
+    # The body ends with the second hashtag's closing tag, with a single space
+    # between the two hashtag elements.
+    assert html_body.endswith("</hashtag>")
+    assert "</hashtag> <hashtag" in html_body
 
 
 def test_format_post_html_omits_hashtag_section_when_empty():
     html_body = format_post_html(_article(), UrlPreviewData())
-    # Body ends with the closing </div> of the preview card — no trailing tag block.
+    # Body ends with the closing </div> of the preview card — no trailing
+    # <p/> or <hashtag> elements.
     assert html_body.endswith("</div>")
-    assert "#" not in html_body.split("</div>")[-1]
+    assert "<p/>" not in html_body
+    assert "<hashtag" not in html_body
 
 
-def test_format_post_html_escapes_hashtag_text():
-    html_body = format_post_html(_article(), UrlPreviewData(), hashtags=("a<b", "ok"))
-    assert "#a&lt;b #ok" in html_body
-    assert "#a<b" not in html_body
-
-
-def test_format_post_html_converts_newlines_in_title_to_br():
-    article = Article(
-        title="Line one\nLine two",
-        canonical_url="https://example.com/article",
-        raw_url="https://example.com/article",
-        item_guid="urn:1",
-        summary="x",
-        published_at_unix=1_000_000,
-        source_url="https://feed.example/rss",
-    )
-    html_body = format_post_html(article)
-    assert "Line one<br>Line two" in html_body
+def test_format_post_html_hashtag_attribute_lowercased_span_preserves_case():
+    """Sanity-check that the Rust _x_hashtag wiring is in place."""
+    html_body = format_post_html(_article(), UrlPreviewData(), hashtags=("MixedCase",))
+    assert 'hashtag="mixedcase"' in html_body
+    assert '<span class="plugin-hashtag-right">MixedCase</span>' in html_body
 
 
 # ---------------------------------------------------------------------------
@@ -222,12 +216,45 @@ def test_dry_run_does_not_call_client(conn, caplog, monkeypatch):
             now_unix=2_000_000,
         )
     assert client.posts == []
-    # Dry-run skips the preview fetch — no point burning a network round-trip.
-    assert captured == []
+    # Dry-run does the same fetch + HTML construction as a real post — the
+    # whole point is that the operator sees what would have hit the network.
+    assert captured == ["https://example.com/article?utm_source=x"]
     assert any("[DRY-RUN]" in record.message for record in caplog.records)
 
 
-def test_dry_run_records_history_with_dry_run_flag(conn):
+def test_dry_run_logs_full_html_body(conn, caplog, monkeypatch):
+    """Dry-run logs the would-be-posted HTML so operators can preview the post."""
+    _patch_preview(
+        monkeypatch,
+        returns=UrlPreviewData(
+            url="https://example.com/article",
+            title="OG Title",
+            description="OG desc",
+            image_url="https://img.example/og.png",
+        ),
+    )
+    with caplog.at_level(logging.INFO):
+        post_or_dry_run(
+            client=_FakeClient(),
+            article=_article(),
+            identity=_identity(),
+            conn=conn,
+            dry_run=True,
+            now_unix=2_000_000,
+        )
+    body_messages = [
+        record.message for record in caplog.records if "[DRY-RUN] body:" in record.message
+    ]
+    assert len(body_messages) == 1
+    body = body_messages[0]
+    # Body log carries the actual rendered card HTML, not just a summary.
+    assert '<div class="plugin-urlpreview-card">' in body
+    assert ">OG Title</a>" in body
+    assert "https://img.example/og.png" in body
+
+
+def test_dry_run_records_history_with_dry_run_flag(conn, monkeypatch):
+    _patch_preview(monkeypatch)
     post_or_dry_run(
         client=_FakeClient(),
         article=_article(),
@@ -268,7 +295,8 @@ def test_real_run_calls_client_and_records_history(conn, monkeypatch):
     assert captured == ["https://example.com/article?utm_source=x"]
     assert len(client.posts) == 1
     body = client.posts[0]
-    assert "An article" in body
+    # Card carries the OG title as the link text; the article title only
+    # appears as a fallback when the preview title is blank (not the case here).
     assert '<div class="plugin-urlpreview-card">' in body
     assert ">OG Title</a>" in body
     posts = posts_in_last_24h_for_identity(conn, SALT, 2_000_000)
@@ -296,7 +324,11 @@ def test_real_run_appends_identity_hashtags_to_post_body(conn, monkeypatch):
         now_unix=2_000_000,
     )
     assert len(client.posts) == 1
-    assert client.posts[0].endswith("<br><br>#news #world")
+    body = client.posts[0]
+    assert "<p/>" in body
+    assert '<hashtag hashtag="news">' in body
+    assert '<hashtag hashtag="world">' in body
+    assert body.endswith("</hashtag>")
 
 
 def test_real_run_posts_anyway_when_preview_fetch_fails(conn, caplog, monkeypatch):
@@ -326,9 +358,10 @@ def test_real_run_posts_anyway_when_preview_fetch_fails(conn, caplog, monkeypatc
     )
 
 
-def test_default_now_unix_is_close_to_real_clock(conn):
+def test_default_now_unix_is_close_to_real_clock(conn, monkeypatch):
     """When now_unix is omitted the function uses time.time() — verify roughly."""
     import time as time_module
+    _patch_preview(monkeypatch)
     before = int(time_module.time())
     post_or_dry_run(
         client=_FakeClient(),
