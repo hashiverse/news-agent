@@ -83,11 +83,14 @@ def fetch_feed_body(
     cached = get_cached(conn, source_url)
 
     # Short-circuit: cache is younger than the freshness window → return it
-    # without making any network request at all.
+    # without making any network request at all. Logged at DEBUG (not INFO)
+    # because this is the boring steady-state path — the runner re-fetches
+    # every source on every iteration, and we don't want to spam stderr with
+    # "skipped network" lines. Real network events (200, 304) stay at INFO.
     if cached is not None:
         cache_age = max(0, now_unix - cached.fetched_at_unix)
         if cache_age < cache_freshness_window:
-            logger.info(
+            logger.debug(
                 "fetched %s (%d bytes, from cache, age %ds, fresh — skipped network)",
                 source_url,
                 len(cached.body),

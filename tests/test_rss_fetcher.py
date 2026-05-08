@@ -318,6 +318,9 @@ def test_stale_cache_falls_through_to_revalidation(conn):
 
 
 def test_fresh_cache_log_line_says_skipped_network(conn, caplog):
+    """The short-circuit logs at DEBUG (not INFO) — only real network events
+    (200 download, 304 revalidation) are operator-visible at INFO. Captured
+    here at DEBUG to verify the line still exists for diagnostics."""
     url = "https://example.invalid/feed.xml"
     save_cache(
         conn,
@@ -327,17 +330,39 @@ def test_fresh_cache_log_line_says_skipped_network(conn, caplog):
         last_modified=None,
         fetched_at_unix=900,
     )
-    with caplog.at_level("INFO", logger="news_agent.rss_fetcher"):
+    with caplog.at_level("DEBUG", logger="news_agent.rss_fetcher"):
         fetch_feed_body(url, conn, now_unix=1000, opener=_ForbidOpener())
-    matching = [r.getMessage() for r in caplog.records if "fetched" in r.getMessage()]
+    matching = [r for r in caplog.records if "fetched" in r.getMessage()]
     assert len(matching) == 1
-    msg = matching[0]
+    record = matching[0]
+    msg = record.getMessage()
+    # Pin the level so a future regression to INFO is caught.
+    assert record.levelname == "DEBUG"
     assert "from cache" in msg
     assert "age 100s" in msg
     assert "fresh" in msg
     assert "skipped network" in msg
     assert "304" not in msg
     assert "downloaded" not in msg
+
+
+def test_fresh_cache_short_circuit_silent_at_default_info_level(conn, caplog):
+    """Companion to the DEBUG test above: at the INFO level (the daemon's
+    default), the short-circuit emits nothing — that's the whole point of
+    the demotion."""
+    url = "https://example.invalid/feed.xml"
+    save_cache(
+        conn,
+        source_url=url,
+        body=b"<rss/>",
+        etag=None,
+        last_modified=None,
+        fetched_at_unix=900,
+    )
+    with caplog.at_level("INFO", logger="news_agent.rss_fetcher"):
+        fetch_feed_body(url, conn, now_unix=1000, opener=_ForbidOpener())
+    fetched_records = [r for r in caplog.records if "fetched" in r.getMessage()]
+    assert fetched_records == []
 
 
 def test_freshness_window_zero_disables_short_circuit(conn):

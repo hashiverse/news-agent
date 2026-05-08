@@ -4,9 +4,24 @@ from __future__ import annotations
 
 import random
 
-from news_agent.picker import pick_article
+import pytest
+
+from news_agent import picker
+from news_agent.picker import pick_article, set_verbose_filtering
 from news_agent.posts_db import ONE_DAY_SECONDS
 from news_agent.rss_parser import Article
+
+
+@pytest.fixture(autouse=True)
+def _picker_verbose_default_off():
+    """Reset the picker's verbose-filtering flag around every test.
+
+    The flag is process-wide module state; without this fixture, a test
+    that enables it would leak into subsequent tests that assume the
+    default-off behaviour."""
+    set_verbose_filtering(False)
+    yield
+    set_verbose_filtering(False)
 
 
 def _article(*, url: str, published_at: int | None, title: str | None = None, summary: str = "") -> Article:
@@ -352,7 +367,9 @@ def test_keyword_match_strips_hashtags_from_title_too():
 
 
 def test_keyword_rejection_logs_required_misses_and_haystack(caplog):
-    """Operators debugging a too-strict filter need to see WHAT was tried."""
+    """Operators debugging a too-strict filter need to see WHAT was tried —
+    when the verbose-filtering flag is on, every rejection logs at INFO."""
+    set_verbose_filtering(True)
     a = _fresh_article(url="https://x/a", title="Cooking with cheese")
     with caplog.at_level("INFO", logger="news_agent.picker"):
         chosen = _pick([a], keywords_required=("rust", "async"))
@@ -367,6 +384,7 @@ def test_keyword_rejection_logs_required_misses_and_haystack(caplog):
 
 
 def test_keyword_rejection_logs_optional_miss(caplog):
+    set_verbose_filtering(True)
     a = _fresh_article(url="https://x/a", title="Cooking with cheese")
     with caplog.at_level("INFO", logger="news_agent.picker"):
         chosen = _pick([a], keywords_optional=("rust", "wasm"))
@@ -376,8 +394,29 @@ def test_keyword_rejection_logs_optional_miss(caplog):
     assert "no optional keyword" in rejections[0]
 
 
+def test_keyword_rejection_silent_by_default(caplog):
+    """Default flag state (off) emits no rejection log line at all — picker
+    rejections are too noisy for steady-state operation."""
+    # The autouse fixture leaves the flag off; do NOT call set_verbose_filtering.
+    a = _fresh_article(url="https://x/a", title="Cooking with cheese")
+    with caplog.at_level("INFO", logger="news_agent.picker"):
+        chosen = _pick([a], keywords_required=("rust",))
+    assert chosen is None
+    assert not any("keyword filter rejected" in r.getMessage() for r in caplog.records)
+
+
+def test_set_verbose_filtering_round_trips_module_state():
+    """Sanity: the setter actually flips the module-level flag."""
+    set_verbose_filtering(True)
+    assert picker._VERBOSE_FILTERING is True
+    set_verbose_filtering(False)
+    assert picker._VERBOSE_FILTERING is False
+
+
 def test_keyword_acceptance_does_not_log_rejection(caplog):
-    """When the article passes, no rejection log line is emitted."""
+    """When the article passes, no rejection log line is emitted — even with
+    the verbose-filtering flag on."""
+    set_verbose_filtering(True)
     a = _fresh_article(url="https://x/a", title="A piece on rust")
     with caplog.at_level("INFO", logger="news_agent.picker"):
         chosen = _pick([a], keywords_required=("rust",))

@@ -37,6 +37,7 @@ from news_agent.global_salt import (
 )
 from news_agent.hashiverse_setup import start_hashiverse_client_for_identity
 from news_agent.keyphrase import derive_keyphrase, derive_keyphrase_cheap
+from news_agent.picker import set_verbose_filtering
 from news_agent.poller import RemotePoller
 from news_agent.remote_source import (
     CachedFile,
@@ -150,6 +151,12 @@ def main() -> None:
     is_flag=True,
     help="Bridge log output from the Rust hashiverse-client into Python's logging. Off by default because the Rust stack is chatty. Once on, lower the Python root logger level to surface DEBUG/TRACE Rust records.",
 )
+@click.option(
+    "--verbose-filtering",
+    "verbose_filtering",
+    is_flag=True,
+    help="Log every article rejected by the keyword filter at INFO level. Off by default — useful when tuning keywords_required / keywords_optional. Each rejection logs the missing/expected keywords and the haystack the picker compared against.",
+)
 def run(
     control_arg: str,
     create_new: bool,
@@ -157,9 +164,15 @@ def run(
     test_mode: bool,
     production: bool,
     verbose_hashiverse: bool,
+    verbose_filtering: bool,
 ) -> None:
     """Start the daemon. Watches the control file for changes and reloads in place."""
     _configure_logging(verbose_hashiverse=verbose_hashiverse)
+
+    # Plumb the picker's per-rejection logging flag from the CLI into the
+    # picker module's process-wide toggle. Off by default so steady-state
+    # operation isn't drowned in `keyword filter rejected ...` lines.
+    set_verbose_filtering(verbose_filtering)
 
     # Mutex: --test always runs in dry-run; --production opts in to real posts.
     # Combining them is incoherent — fail fast rather than silently picking one.

@@ -16,7 +16,7 @@ identities:
     nickname: "Tesla FSD & Robotaxi news (news-agent)"
     status: "I collect together as much news as I can find about the progress of Tesla's robotaxi business."
     enabled: true
-    max_posts_per_day: 192
+    max_posts_per_day: 1920
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC4DBLlq1x0AKmip1QJUcbXg  # Brighter with Herbert
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCgbyN_o-Guwpyqfuuz3pyIw  # Farzad
@@ -32,7 +32,6 @@ identities:
       - https://www.theguardian.com/technology/rss
       - https://feeds.bbci.co.uk/news/technology/rss.xml
       - https://www.theguardian.com/technology/motoring/rss
-      -
     hashtags: []
     keywords_required: ["tesla"]
     keywords_optional: ["fsd", "cybercab", "robotaxi"]

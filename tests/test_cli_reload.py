@@ -355,13 +355,14 @@ def _stub_cli_run_side_effects(
     captured_derive_fns: list,
     captured_run_loop_kwargs: list | None = None,
     captured_log_bridge_calls: list | None = None,
+    captured_filter_calls: list | None = None,
 ) -> None:
     """Stub the side-effecting parts of cli.run so a CliRunner invocation
     completes synchronously without touching the network or main loop.
 
     Leaves real: argv parsing, derive_fn selection, dry-run resolution,
-    --verbose-hashiverse gating, the call to _start_clients_for_identities.
-    That's the surface under test.
+    --verbose-hashiverse / --verbose-filtering gating, the call to
+    _start_clients_for_identities. That's the surface under test.
     """
     def capturing_start(identities, identity_dirs, global_salt, *, derive_fn):
         captured_derive_fns.append(derive_fn)
@@ -375,12 +376,20 @@ def _stub_cli_run_side_effects(
         if captured_log_bridge_calls is not None:
             captured_log_bridge_calls.append(True)
 
+    def capturing_set_verbose_filtering(enabled: bool) -> None:
+        if captured_filter_calls is not None:
+            captured_filter_calls.append(enabled)
+
     monkeypatch.setattr(cli, "_start_clients_for_identities", capturing_start)
     monkeypatch.setattr(cli, "run_loop", capturing_run_loop)
     monkeypatch.setattr(cli, "FileWatcher", _NoOpWatcher)
     # The Rust→Python log bridge is a process-wide one-shot; pytest invokes
     # cli.main repeatedly within one process, so stub it out per-test.
     monkeypatch.setattr(cli, "init_hashiverse_logging", capturing_log_bridge)
+    # The picker's verbose-filtering flag is also process-wide module state;
+    # stub the cli.set_verbose_filtering re-export so tests can capture
+    # without leaking state into the picker module across tests.
+    monkeypatch.setattr(cli, "set_verbose_filtering", capturing_set_verbose_filtering)
     monkeypatch.setenv("NEWS_AGENT_GLOBAL_SALT", "z" * 64)
 
 
@@ -559,3 +568,50 @@ def test_run_with_verbose_hashiverse_initializes_log_bridge(monkeypatch, tmp_pat
 
     assert result.exit_code == 0, result.output
     assert log_bridge_calls == [True]
+
+
+# ---------------------------------------------------------------------------
+# --verbose-filtering gates the picker's per-rejection log lines
+
+
+def test_run_default_does_not_enable_verbose_filtering(monkeypatch, tmp_path):
+    """No flag → set_verbose_filtering(False) is called once."""
+    derive_fns: list = []
+    filter_calls: list = []
+    _stub_cli_run_side_effects(
+        monkeypatch,
+        captured_derive_fns=derive_fns,
+        captured_filter_calls=filter_calls,
+    )
+
+    control_path = tmp_path / "control.yaml"
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+
+    result = CliRunner().invoke(
+        cli.main, ["run", "--control", str(control_path), "--test"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert filter_calls == [False]
+
+
+def test_run_with_verbose_filtering_enables_picker_logging(monkeypatch, tmp_path):
+    """--verbose-filtering → set_verbose_filtering(True) is called once."""
+    derive_fns: list = []
+    filter_calls: list = []
+    _stub_cli_run_side_effects(
+        monkeypatch,
+        captured_derive_fns=derive_fns,
+        captured_filter_calls=filter_calls,
+    )
+
+    control_path = tmp_path / "control.yaml"
+    _write_control(control_path, _identity_block(SALT_A, "alpha"))
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["run", "--control", str(control_path), "--test", "--verbose-filtering"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert filter_calls == [True]

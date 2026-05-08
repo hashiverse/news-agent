@@ -51,6 +51,22 @@ logger = logging.getLogger(__name__)
 # the operator's terminal.
 _HAYSTACK_LOG_CAP = 240
 
+# Process-wide flag set by `cli.run` from the `--verbose-filtering` CLI
+# option. Off by default — the picker rejects most articles in steady state
+# (recency / dedupe / keyword), so per-rejection INFO logging would flood
+# stderr. Operators flip it on when tuning a `keywords_required` /
+# `keywords_optional` config and want to see exactly what's getting filtered.
+_VERBOSE_FILTERING = False
+
+
+def set_verbose_filtering(enabled: bool) -> None:
+    """Toggle INFO-level logging for keyword-filter rejections.
+
+    Process-wide one-shot, called by `cli.run`. See `_VERBOSE_FILTERING`.
+    """
+    global _VERBOSE_FILTERING
+    _VERBOSE_FILTERING = enabled
+
 
 def pick_article(
     *,
@@ -109,20 +125,22 @@ def _is_eligible(
         if keywords_required:
             missing = [kw for kw in keywords_required if kw not in haystack]
             if missing:
-                logger.info(
-                    "keyword filter rejected %r: required %s missing; haystack=%r",
-                    article.title,
-                    missing,
-                    _truncate_for_log(haystack),
-                )
+                if _VERBOSE_FILTERING:
+                    logger.info(
+                        "keyword filter rejected %r: required %s missing; haystack=%r",
+                        article.title,
+                        missing,
+                        _truncate_for_log(haystack),
+                    )
                 return False
         if keywords_optional and not any(kw in haystack for kw in keywords_optional):
-            logger.info(
-                "keyword filter rejected %r: no optional keyword in %s matched; haystack=%r",
-                article.title,
-                list(keywords_optional),
-                _truncate_for_log(haystack),
-            )
+            if _VERBOSE_FILTERING:
+                logger.info(
+                    "keyword filter rejected %r: no optional keyword in %s matched; haystack=%r",
+                    article.title,
+                    list(keywords_optional),
+                    _truncate_for_log(haystack),
+                )
             return False
     return True
 

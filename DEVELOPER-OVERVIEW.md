@@ -147,6 +147,7 @@ news-agent run [OPTIONS]
 | `--test` | flag | Use an ephemeral home dir (auto-deleted on exit), implies `--create-new`, runs in dry-run with cheap argon2. Mutually exclusive with `--production`. |
 | `--production` | flag | Post for real to hashiverse. Without this flag, dry-run is the default — logs what would have been posted instead. Mutually exclusive with `--test`. |
 | `--verbose-hashiverse` | flag | Bridge Rust hashiverse-client `log::*` output into Python's logging. Off by default — the Rust stack is chatty. See §11. |
+| `--verbose-filtering` | flag | Log every article rejected by the keyword filter at INFO level. Off by default — useful when tuning `keywords_required` / `keywords_optional`; each rejection logs the missing keywords and the haystack the picker compared against. |
 
 The required env var is `NEWS_AGENT_GLOBAL_SALT`. Missing → daemon refuses to start. Below 32 chars → friendly-cranky warning at startup, daemon continues running.
 
@@ -360,6 +361,8 @@ Salt-too-short warnings have a deliberate friendly-cranky tone:
 The random suggestion is a fresh URL-safe-base64 string (cryptographically random, generated via `secrets.token_urlsafe`) — different on every load, so the operator can paste it as-is.
 
 **Rust → Python log bridge.** Off by default; opt in with `--verbose-hashiverse`. When the flag is set, `_configure_logging` calls `hashiverse_client.init_logging()` after `basicConfig`, which installs a `pyo3-log` shim so `log::*` records emitted by `hashiverse-client` (and the rest of the Rust stack underneath it) flow through Python's `logging` module — same handler, same format, same stderr stream. Logger names on the Python side are the Rust target (e.g. `hashiverse_lib::client::peer_tracker`). To surface Rust DEBUG/TRACE output, lower the Python root logger level — no Rust rebuild needed. The bridge is process-wide and one-shot; pytest stubs it via `_stub_cli_run_side_effects` so per-test `cli.run` invocations don't hit the deliberate "logger already set" loud-fail.
+
+**Log-level convention.** INFO is reserved for events that *wouldn't* repeat in steady state — real network fetches (200/304), posts, reloads, errors. DEBUG is for repetitive runtime detail that runs every iteration of the scheduling loop: the rss_fetcher's fresh-cache short-circuit (`fetched X (… fresh — skipped network)`), and per-article keyword-filter rejections from the picker (gated additionally behind `--verbose-filtering` so they're silent at the default INFO level even with a lowered root level). The rule of thumb: if you'd see the same line N times per minute in a healthy daemon, it's DEBUG; if you'd see it once per N minutes, it's INFO.
 
 ---
 
