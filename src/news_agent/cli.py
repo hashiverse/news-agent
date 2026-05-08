@@ -282,15 +282,17 @@ def run(
             logger.info("received signal %s, shutting down", signum)
             stop_event.set()
 
-        # SIGTERM (and SIGINT, where the OS delivers it via signal handler) trigger
-        # an orderly shutdown by setting the stop event. SIGINT on Windows is
-        # better handled via KeyboardInterrupt below.
+        # SIGTERM triggers orderly shutdown via the stop event. SIGINT (Ctrl-C)
+        # is intentionally LEFT WITH PYTHON'S DEFAULT HANDLER so it raises
+        # KeyboardInterrupt: a custom handler that just calls stop_event.set()
+        # is unreliable on Windows — when the main thread is in a long
+        # stop_event.wait() the handler may not run promptly, and the daemon
+        # appears unkillable. KeyboardInterrupt, by contrast, propagates
+        # through Event.wait() cleanly on every platform Python supports
+        # (the signal-aware wait was wired up in Python 3.5). The catch
+        # below sets stop_event so the poller thread exits cleanly too.
         if hasattr(signal, "SIGTERM"):
             signal.signal(signal.SIGTERM, _shutdown)
-        try:
-            signal.signal(signal.SIGINT, _shutdown)
-        except (AttributeError, ValueError):
-            pass
 
         try:
             run_loop(
@@ -302,6 +304,10 @@ def run(
             )
         except KeyboardInterrupt:
             logger.info("received Ctrl-C, shutting down")
+            # Wake up any background threads (e.g. the URL-poller) sharing
+            # this stop_event — without this they'd keep ticking until their
+            # next wait timeout expires.
+            stop_event.set()
         finally:
             for poller in pollers:
                 poller.stop()

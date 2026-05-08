@@ -48,9 +48,13 @@ logger = logging.getLogger(__name__)
 # the loop to notice the new config.
 NO_ELIGIBLE_POLL_SECONDS = 60.0
 
-# Cap each individual stop_event.wait() so a long scheduled wait still
-# notices reloads in a reasonable time.
-MAX_WAIT_INTERVAL_SECONDS = 300.0
+# All stop_event.wait() calls are chunked into intervals this short. A single
+# long Event.wait() can block prompt SIGINT/Ctrl-C delivery on Windows even
+# in modern Python (we hit this in practice with 60s and 300s waits) — chunking
+# guarantees the interpreter checks for pending signals within ~1s of Ctrl-C
+# regardless of platform-specific signal-aware-wait behaviour. The overhead
+# is one extra wakeup-per-second, which is negligible.
+MAX_WAIT_INTERVAL_SECONDS = 1.0
 
 
 def run_loop(
@@ -77,7 +81,7 @@ def run_loop(
             )
         except Exception:  # noqa: BLE001 — keep the loop alive across faults
             logger.exception("scheduling iteration raised; sleeping briefly and retrying")
-            stop_event.wait(timeout=5)
+            _interruptible_sleep(stop_event, 5.0)
     logger.info("scheduling loop stopped")
 
 
@@ -94,7 +98,7 @@ def _one_iteration(
     identities = [i for i in snapshot.control.identities if i.enabled]
     if not identities:
         logger.debug("no enabled identities; sleeping %ds", int(NO_ELIGIBLE_POLL_SECONDS))
-        stop_event.wait(timeout=NO_ELIGIBLE_POLL_SECONDS)
+        _interruptible_sleep(stop_event, NO_ELIGIBLE_POLL_SECONDS)
         return
 
     now = int(time.time())
@@ -116,7 +120,7 @@ def _one_iteration(
             _format_duration(soonest_t - now),
             int(NO_ELIGIBLE_POLL_SECONDS),
         )
-        stop_event.wait(timeout=NO_ELIGIBLE_POLL_SECONDS)
+        _interruptible_sleep(stop_event, NO_ELIGIBLE_POLL_SECONDS)
         return
 
     next_post_time, identity, article = chosen
@@ -275,6 +279,24 @@ def _wait_until(target_unix: int, stop_event: threading.Event) -> bool:
         remaining = target_unix - int(time.time())
         if remaining <= 0:
             return True
-        chunk = min(remaining, MAX_WAIT_INTERVAL_SECONDS)
+        chunk = min(float(remaining), MAX_WAIT_INTERVAL_SECONDS)
         if stop_event.wait(timeout=chunk):
             return False
+
+
+def _interruptible_sleep(stop_event: threading.Event, total_seconds: float) -> bool:
+    """Sleep up to ``total_seconds``, checking ``stop_event`` in short chunks.
+
+    Returns True if stop_event was set during the sleep, False if the full
+    duration elapsed. Each underlying ``Event.wait()`` is capped at
+    MAX_WAIT_INTERVAL_SECONDS so the Python interpreter regularly returns
+    to bytecode and can deliver pending signals (e.g. Ctrl-C → KeyboardInterrupt).
+    """
+    deadline = time.monotonic() + total_seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        chunk = min(remaining, MAX_WAIT_INTERVAL_SECONDS)
+        if stop_event.wait(timeout=chunk):
+            return True
