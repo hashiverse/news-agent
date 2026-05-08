@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import atexit
 import logging
+import os
 import shutil
 import signal
 import sys
@@ -54,12 +55,56 @@ from news_agent.watcher import FileWatcher
 logger = logging.getLogger("news_agent")
 
 
+class _ColorFormatter(logging.Formatter):
+    """A logging.Formatter that wraps the level name in ANSI escape codes.
+
+    INFO is intentionally left uncolored — it's the most common level, so
+    coloring it would just add noise. DEBUG / WARNING / ERROR / CRITICAL
+    each get a distinct color so non-INFO records pop visually in a long log.
+
+    Color codes are inserted via two synthetic record attributes (``color`` /
+    ``color_reset``) which the format string interpolates *around* the
+    ``%(levelname)-7s`` span. Width-padding is therefore unaffected by the
+    presence of escape codes.
+    """
+
+    _COLORS = {
+        logging.DEBUG: "\x1b[90m",      # gray
+        logging.WARNING: "\x1b[33m",    # yellow
+        logging.ERROR: "\x1b[31m",      # red
+        logging.CRITICAL: "\x1b[1;91m", # bold bright red
+    }
+    _RESET = "\x1b[0m"
+
+    def __init__(self, fmt: str, *, use_color: bool) -> None:
+        super().__init__(fmt)
+        self._use_color = use_color
+
+    def format(self, record: logging.LogRecord) -> str:
+        if self._use_color and record.levelno in self._COLORS:
+            record.color = self._COLORS[record.levelno]
+            record.color_reset = self._RESET
+        else:
+            record.color = ""
+            record.color_reset = ""
+        return super().format(record)
+
+
 def _configure_logging(*, verbose_hashiverse: bool) -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-        stream=sys.stderr,
-    )
+    # Color is opt-out via the no-color.org convention (NO_COLOR env var) and
+    # opt-in only when stderr is a real terminal — pipes/files/journald don't
+    # render escape codes, so emitting them there would just clutter output.
+    use_color = sys.stderr.isatty() and "NO_COLOR" not in os.environ
+    fmt = "%(asctime)s %(color)s%(levelname)-7s%(color_reset)s %(name)s: %(message)s"
+    root = logging.getLogger()
+    # Idempotency check matches logging.basicConfig: only attach a handler if
+    # the root logger has none. Keeps repeated cli.run invocations under
+    # pytest from piling up duplicate handlers (and duplicate output).
+    if not root.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(_ColorFormatter(fmt, use_color=use_color))
+        root.addHandler(handler)
+        root.setLevel(logging.INFO)
     if verbose_hashiverse:
         # Bridge Rust hashiverse-client `log::*` output into Python's logging.
         # Process-wide one-shot; logger names on the Python side are the Rust

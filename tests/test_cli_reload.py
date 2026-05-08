@@ -11,10 +11,15 @@ Verifies that on every successful reload of the control file, the in-memory
 
 The tests substitute ``_start_clients_for_identities`` via monkeypatch so
 real hashiverse clients (with tokio runtimes) are never constructed.
+
+Also covers smaller surfaces that live in cli.py: dry-run / production
+flag wiring, `--verbose-hashiverse` / `--verbose-filtering` plumbing, and
+the `_ColorFormatter` ANSI-color formatter for log output.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -615,3 +620,80 @@ def test_run_with_verbose_filtering_enables_picker_logging(monkeypatch, tmp_path
 
     assert result.exit_code == 0, result.output
     assert filter_calls == [True]
+
+
+# ---------------------------------------------------------------------------
+# _ColorFormatter — wraps log-level names in ANSI escape codes on TTY stderr.
+
+
+def _make_log_record(level: int, message: str = "msg") -> logging.LogRecord:
+    return logging.LogRecord(
+        name="news_agent.test",
+        level=level,
+        pathname=__file__,
+        lineno=0,
+        msg=message,
+        args=(),
+        exc_info=None,
+    )
+
+
+_COLOR_FMT = "%(color)s%(levelname)-7s%(color_reset)s %(message)s"
+
+
+def test_color_formatter_wraps_warning_in_yellow():
+    formatter = cli._ColorFormatter(_COLOR_FMT, use_color=True)
+    out = formatter.format(_make_log_record(logging.WARNING, "watch out"))
+    assert "\x1b[33m" in out  # yellow
+    assert "\x1b[0m" in out
+    assert "watch out" in out
+
+
+def test_color_formatter_wraps_error_in_red():
+    formatter = cli._ColorFormatter(_COLOR_FMT, use_color=True)
+    out = formatter.format(_make_log_record(logging.ERROR))
+    assert "\x1b[31m" in out  # red
+    assert "\x1b[0m" in out
+
+
+def test_color_formatter_critical_is_bold_red():
+    formatter = cli._ColorFormatter(_COLOR_FMT, use_color=True)
+    out = formatter.format(_make_log_record(logging.CRITICAL))
+    assert "\x1b[1;91m" in out  # bold bright red
+    assert "\x1b[0m" in out
+
+
+def test_color_formatter_dim_grey_for_debug():
+    formatter = cli._ColorFormatter(_COLOR_FMT, use_color=True)
+    out = formatter.format(_make_log_record(logging.DEBUG))
+    assert "\x1b[90m" in out  # gray
+
+
+def test_color_formatter_leaves_info_uncolored():
+    """INFO is the noisy level; coloring it would add visual clutter."""
+    formatter = cli._ColorFormatter(_COLOR_FMT, use_color=True)
+    out = formatter.format(_make_log_record(logging.INFO))
+    assert "\x1b[" not in out
+
+
+def test_color_formatter_no_codes_when_color_disabled():
+    """use_color=False suppresses ANSI even at WARNING/ERROR."""
+    formatter = cli._ColorFormatter(_COLOR_FMT, use_color=False)
+    for level in (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL):
+        out = formatter.format(_make_log_record(level))
+        assert "\x1b[" not in out, f"unexpected ANSI for level {level}: {out!r}"
+
+
+def test_color_formatter_levelname_padding_preserved():
+    """`%(levelname)-7s` width spec must still pad correctly when the color
+    codes wrap the field — the codes sit *outside* the formatted span."""
+    formatter = cli._ColorFormatter("[%(color)s%(levelname)-7s%(color_reset)s]", use_color=True)
+    out = formatter.format(_make_log_record(logging.WARNING))
+    # WARNING is 7 chars exactly → no padding spaces; the closing bracket
+    # must immediately follow the reset code.
+    assert "\x1b[0m]" in out
+
+    out_info = formatter.format(_make_log_record(logging.INFO))
+    # INFO is 4 chars → 3 trailing spaces inside the level span.
+    # With color disabled at INFO, the brackets bracket the padded levelname.
+    assert "[INFO   ]" in out_info

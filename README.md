@@ -299,7 +299,7 @@ The `plugin-urlpreview-card*` CSS classes are styled by the consuming client at 
 | `image_url` | `meta[property='og:image']` → `meta[name='twitter:image']` → `meta[name='twitter:image:src']` |
 | `url` | `meta[property='og:url']` → `<link rel='canonical' href=…>` (note: `href`, not `content`) |
 
-Doing it locally saves one round-trip per post against shared hashiverse-network resources. **Dry-run does the same fetch + HTML construction as a real post** and logs the body — the whole point of dry-run is the operator sees exactly what would have hit the network. If the fetch fails (non-HTTPS URL, network error, parse failure), the post still goes out — `posting._fetch_preview_safely` logs a warning and returns blanks, and the card falls back to `article.title` as the link text with no image / no description.
+**Dry-run does the same fetch + HTML construction as a real post** and logs the body — the whole point of dry-run is the operator sees exactly what would have hit the network. If the fetch fails (non-HTTPS URL, network error, parse failure), the post still goes out — `posting._fetch_preview_safely` logs a warning and returns blanks, and the card falls back to `article.title` as the link text with no image / no description.
 
 **Hashtag input handling.** The Rust `_x_hashtag` function is defensive: it accepts either `"rust"` or `"#rust"` (a single leading `#` is stripped before validation). If the remaining text is empty or contains any non-alphanumeric character, it returns the original input *untouched* (an identity no-op) rather than emit a malformed `<hashtag>` element. News-agent therefore doesn't pre-validate identity hashtags — bad ones just render as plain text in the post body, which is a visible-failure-mode the operator can spot in the dry-run output.
 
@@ -344,6 +344,8 @@ The random suggestion is a fresh URL-safe-base64 string (cryptographically rando
 **Rust → Python log bridge.** Off by default; opt in with `--verbose-hashiverse`. When the flag is set, `_configure_logging` calls `hashiverse_client.init_logging()` after `basicConfig`, which installs a `pyo3-log` shim so `log::*` records emitted by `hashiverse-client` (and the rest of the Rust stack underneath it) flow through Python's `logging` module — same handler, same format, same stderr stream. Logger names on the Python side are the Rust target (e.g. `hashiverse_lib::client::peer_tracker`). To surface Rust DEBUG/TRACE output, lower the Python root logger level — no Rust rebuild needed. The bridge is process-wide and one-shot; pytest stubs it via `_stub_cli_run_side_effects` so per-test `cli.run` invocations don't hit the deliberate "logger already set" loud-fail.
 
 **Log-level convention.** INFO is reserved for events that *wouldn't* repeat in steady state — real network fetches (200/304), posts, reloads, errors. DEBUG is for repetitive runtime detail that runs every iteration of the scheduling loop: the rss_fetcher's fresh-cache short-circuit (`fetched X (… fresh — skipped network)`), and per-article keyword-filter rejections from the picker (gated additionally behind `--verbose-filtering` so they're silent at the default INFO level even with a lowered root level). The rule of thumb: if you'd see the same line N times per minute in a healthy daemon, it's DEBUG; if you'd see it once per N minutes, it's INFO.
+
+**Color.** Log levels are color-coded on TTY stderr — DEBUG = gray, INFO = default (no color, the most common level so coloring it would just add noise), WARNING = yellow, ERROR = red, CRITICAL = bold bright red. Color is automatically suppressed when stderr isn't a TTY (piped to a file, pager, or systemd journal — escape codes would just clutter the output there). Set `NO_COLOR=1` in the environment to force-disable color even on a TTY (the [no-color.org](https://no-color.org) convention). Implementation is `cli._ColorFormatter`, ~25 lines of `logging.Formatter` subclass — no new runtime dependencies.
 
 ---
 
@@ -418,7 +420,7 @@ The Rust client carries a tokio runtime internally; dropping all references to t
 
 ---
 
-## 14. Quick pointers when picking up the next chunk
+## 14. For Claude Code: quick pointers when picking up the next chunk
 
 - **Run the test suite** before doing anything to confirm baseline green.
 - The user is iterating the daemon block-by-block. Each block is one logical concern; don't extrapolate across blocks unless invited.
