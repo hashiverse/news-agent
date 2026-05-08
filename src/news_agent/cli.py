@@ -242,6 +242,11 @@ def run(
         )
 
         stop_event = threading.Event()
+        # Set by on_change after a successful reload; the runner clears it
+        # at the top of every iteration. Wakes up any in-progress
+        # _wait_until / _interruptible_sleep so the runner can recompute
+        # the next post against the freshly-loaded state.
+        reload_event = threading.Event()
 
         def on_change() -> None:
             logger.info("control file changed, reloading")
@@ -253,6 +258,10 @@ def run(
                 global_salt=salt.raw_value,
                 derive_fn=derive_fn,
             )
+            # Always set: even if _reload_state silently kept the previous
+            # state (parse error), waking the runner is harmless — it'll
+            # just re-evaluate against the same identities.
+            reload_event.set()
 
         watcher = FileWatcher(control_path, on_change)
         watcher.start()
@@ -300,6 +309,7 @@ def run(
                 clients=clients,
                 conn=state_db,
                 stop_event=stop_event,
+                reload_event=reload_event,
                 dry_run=dry_run,
             )
         except KeyboardInterrupt:

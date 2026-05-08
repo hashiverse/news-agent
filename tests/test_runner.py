@@ -26,7 +26,9 @@ from news_agent.posts_db import (
 from news_agent.runner import (
     _format_duration,
     _format_local_time,
+    _interruptible_sleep,
     _truncate_title,
+    _wait_until,
     run_loop,
 )
 from news_agent.runtime_state import RuntimeSnapshot, RuntimeState
@@ -186,6 +188,7 @@ def test_loop_picks_eligible_article_and_records_dry_run(conn):
                 clients=clients,
                 conn=conn,
                 stop_event=stop_event,
+                reload_event=threading.Event(),
                 dry_run=True,
                 rng=rng,
             )
@@ -234,6 +237,7 @@ def test_loop_does_not_repost_within_24h(conn):
                 clients=clients,
                 conn=conn,
                 stop_event=stop_event,
+                reload_event=threading.Event(),
                 dry_run=True,
                 rng=_NoJitterRandom(),
             ),
@@ -283,6 +287,7 @@ def test_cross_identity_dedupe_prevents_double_post_of_same_url(conn):
                 clients=clients,
                 conn=conn,
                 stop_event=stop_event,
+                reload_event=threading.Event(),
                 dry_run=True,
                 rng=_NoJitterRandom(),
             ),
@@ -329,6 +334,7 @@ def test_loop_stops_promptly_on_stop_event(conn):
                 clients=clients,
                 conn=conn,
                 stop_event=stop_event,
+                reload_event=threading.Event(),
                 dry_run=True,
                 rng=_NoJitterRandom(),
             ),
@@ -370,6 +376,7 @@ def test_real_run_calls_client_post(conn):
                 clients=clients,
                 conn=conn,
                 stop_event=stop_event,
+                reload_event=threading.Event(),
                 dry_run=False,
                 rng=_NoJitterRandom(),
             ),
@@ -474,6 +481,7 @@ def test_loop_logs_next_scheduled_identity_when_nothing_eligible(conn, caplog):
                 clients=clients,
                 conn=conn,
                 stop_event=stop_event,
+                reload_event=threading.Event(),
                 dry_run=True,
                 rng=_NoJitterRandom(),
             ),
@@ -500,3 +508,106 @@ def test_loop_logs_next_scheduled_identity_when_nothing_eligible(conn, caplog):
     assert "next scheduled is" in msg
     # Format includes a time of day and a duration.
     assert " at " in msg and " in " in msg
+
+
+# ---------------------------------------------------------------------------
+# Wait helpers wake on reload_event so a config reload can cancel an in-flight
+# scheduled-post wait and force the runner to re-evaluate from scratch.
+
+
+def test_wait_until_returns_false_when_reload_event_already_set():
+    stop_event = threading.Event()
+    reload_event = threading.Event()
+    reload_event.set()
+    # Target is 60s in the future — without reload_event, this would block.
+    target = int(time.time()) + 60
+    started = time.monotonic()
+    result = _wait_until(target, stop_event, reload_event)
+    elapsed = time.monotonic() - started
+    assert result is False
+    assert elapsed < 1.0, f"_wait_until didn't return promptly: {elapsed:.2f}s"
+
+
+def test_wait_until_returns_false_when_reload_event_set_mid_wait():
+    stop_event = threading.Event()
+    reload_event = threading.Event()
+    target = int(time.time()) + 60
+
+    def fire_reload() -> None:
+        time.sleep(0.3)
+        reload_event.set()
+
+    threading.Thread(target=fire_reload, daemon=True).start()
+    started = time.monotonic()
+    result = _wait_until(target, stop_event, reload_event)
+    elapsed = time.monotonic() - started
+    assert result is False
+    assert elapsed < 5.0, f"_wait_until didn't wake on reload: {elapsed:.2f}s"
+
+
+def test_interruptible_sleep_returns_true_when_reload_event_set():
+    stop_event = threading.Event()
+    reload_event = threading.Event()
+
+    def fire_reload() -> None:
+        time.sleep(0.3)
+        reload_event.set()
+
+    threading.Thread(target=fire_reload, daemon=True).start()
+    started = time.monotonic()
+    result = _interruptible_sleep(stop_event, reload_event, total_seconds=60.0)
+    elapsed = time.monotonic() - started
+    assert result is True
+    assert elapsed < 5.0, f"_interruptible_sleep didn't wake on reload: {elapsed:.2f}s"
+
+
+def test_loop_recomputes_after_reload(conn):
+    """After reload_event fires during a scheduled wait, the loop re-iterates
+    and posts using the new identity set."""
+    body = _make_rss(
+        title="Reloaded",
+        url="https://example.com/reloaded",
+        pub_date=time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime()),
+    )
+    handler = _make_static_handler(body)
+    with _running_server(handler) as base:
+        source_url = f"{base}/feed.xml"
+
+        # Start with NO identities so the loop sleeps in the no-eligible branch.
+        state = RuntimeState(RuntimeSnapshot(control=ControlConfig(identities=())))
+        clients: dict[str, object] = {}
+        stop_event = threading.Event()
+        reload_event = threading.Event()
+
+        def loop_target() -> None:
+            run_loop(
+                state=state,
+                clients=clients,
+                conn=conn,
+                stop_event=stop_event,
+                reload_event=reload_event,
+                dry_run=True,
+                rng=_NoJitterRandom(),
+            )
+
+        thread = threading.Thread(target=loop_target, daemon=True)
+        thread.start()
+
+        # Let the loop enter its no-eligible sleep.
+        time.sleep(0.5)
+        assert posts_in_last_24h_for_identity(conn, SALT_A, int(time.time())) == []
+
+        # Mid-flight: swap in a fresh state with one identity, then ring the bell.
+        identity = _identity(SALT_A, "Loaded", source_url)
+        state.swap(RuntimeSnapshot(control=ControlConfig(identities=(identity,))))
+        clients[SALT_A] = _FakeClient()
+        reload_event.set()
+
+        # The loop should wake within ~1s, recompute, and post the article.
+        assert _wait_for(
+            lambda: posts_in_last_24h_for_identity(conn, SALT_A, int(time.time())),
+            timeout=5.0,
+        ), "loop did not post after reload"
+
+        stop_event.set()
+        thread.join(timeout=5)

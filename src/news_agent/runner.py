@@ -63,25 +63,38 @@ def run_loop(
     clients: dict[str, object],
     conn: sqlite3.Connection,
     stop_event: threading.Event,
+    reload_event: threading.Event,
     dry_run: bool,
     rng: random.Random | None = None,
 ) -> None:
-    """Main scheduling loop. Returns when ``stop_event`` is set."""
+    """Main scheduling loop. Returns when ``stop_event`` is set.
+
+    ``reload_event`` is set by the watcher thread after a successful control-
+    file reload. We clear it at the top of every iteration and wake any
+    in-progress sleep when it fires — a reload may bring new identities,
+    different keyword filters, or different `max_posts_per_day` caps, so
+    the next post must be (re)computed from scratch with the fresh state.
+    """
     rng = rng if rng is not None else random.Random()
     logger.info("scheduling loop started (dry_run=%s)", dry_run)
     while not stop_event.is_set():
+        # Consume any pending reload signal — if a reload arrives during
+        # this iteration, reload_event is set again and the next iteration
+        # picks it up.
+        reload_event.clear()
         try:
             _one_iteration(
                 state=state,
                 clients=clients,
                 conn=conn,
                 stop_event=stop_event,
+                reload_event=reload_event,
                 dry_run=dry_run,
                 rng=rng,
             )
         except Exception:  # noqa: BLE001 — keep the loop alive across faults
             logger.exception("scheduling iteration raised; sleeping briefly and retrying")
-            _interruptible_sleep(stop_event, 5.0)
+            _interruptible_sleep(stop_event, reload_event, 5.0)
     logger.info("scheduling loop stopped")
 
 
@@ -91,6 +104,7 @@ def _one_iteration(
     clients: dict[str, object],
     conn: sqlite3.Connection,
     stop_event: threading.Event,
+    reload_event: threading.Event,
     dry_run: bool,
     rng: random.Random,
 ) -> None:
@@ -98,7 +112,7 @@ def _one_iteration(
     identities = [i for i in snapshot.control.identities if i.enabled]
     if not identities:
         logger.debug("no enabled identities; sleeping %ds", int(NO_ELIGIBLE_POLL_SECONDS))
-        _interruptible_sleep(stop_event, NO_ELIGIBLE_POLL_SECONDS)
+        _interruptible_sleep(stop_event, reload_event, NO_ELIGIBLE_POLL_SECONDS)
         return
 
     now = int(time.time())
@@ -120,7 +134,7 @@ def _one_iteration(
             _format_duration(soonest_t - now),
             int(NO_ELIGIBLE_POLL_SECONDS),
         )
-        _interruptible_sleep(stop_event, NO_ELIGIBLE_POLL_SECONDS)
+        _interruptible_sleep(stop_event, reload_event, NO_ELIGIBLE_POLL_SECONDS)
         return
 
     next_post_time, identity, article = chosen
@@ -138,8 +152,10 @@ def _one_iteration(
             _format_duration(seconds_until_post),
         )
 
-    if not _wait_until(next_post_time, stop_event):
-        # Stop event fired during the wait — bail out, the outer loop will exit.
+    if not _wait_until(next_post_time, stop_event, reload_event):
+        # Stop or reload fired during the wait — bail out. The outer run_loop
+        # decides what to do next: stop_event ends the loop, reload_event just
+        # restarts the iteration with fresh state.
         return
 
     client = clients.get(identity.salt)
@@ -271,34 +287,46 @@ def _truncate_title(title: str, max_len: int = 80) -> str:
     return title[: max_len - 1] + "…"
 
 
-def _wait_until(target_unix: int, stop_event: threading.Event) -> bool:
+def _wait_until(
+    target_unix: int,
+    stop_event: threading.Event,
+    reload_event: threading.Event,
+) -> bool:
     """Sleep in MAX_WAIT_INTERVAL_SECONDS chunks until ``target_unix``.
 
-    Returns True if we made it to ``target_unix`` without stop_event firing,
-    False if shutdown was signalled mid-wait.
+    Returns True if we made it to ``target_unix`` cleanly, False if either
+    ``stop_event`` (shutdown) or ``reload_event`` (config reload — caller
+    should re-evaluate from scratch) fired mid-wait.
     """
     while True:
+        if stop_event.is_set() or reload_event.is_set():
+            return False
         remaining = target_unix - int(time.time())
         if remaining <= 0:
             return True
         chunk = min(float(remaining), MAX_WAIT_INTERVAL_SECONDS)
-        if stop_event.wait(timeout=chunk):
-            return False
+        stop_event.wait(timeout=chunk)
 
 
-def _interruptible_sleep(stop_event: threading.Event, total_seconds: float) -> bool:
-    """Sleep up to ``total_seconds``, checking ``stop_event`` in short chunks.
+def _interruptible_sleep(
+    stop_event: threading.Event,
+    reload_event: threading.Event,
+    total_seconds: float,
+) -> bool:
+    """Sleep up to ``total_seconds`` in MAX_WAIT_INTERVAL_SECONDS chunks.
 
-    Returns True if stop_event was set during the sleep, False if the full
-    duration elapsed. Each underlying ``Event.wait()`` is capped at
-    MAX_WAIT_INTERVAL_SECONDS so the Python interpreter regularly returns
-    to bytecode and can deliver pending signals (e.g. Ctrl-C → KeyboardInterrupt).
+    Returns True if either ``stop_event`` or ``reload_event`` fired during
+    the sleep, False if the full duration elapsed. Short chunks let the
+    Python interpreter regularly check for pending signals (Ctrl-C →
+    KeyboardInterrupt) and let the loop notice ``reload_event`` set by the
+    watcher thread.
     """
     deadline = time.monotonic() + total_seconds
     while True:
+        if stop_event.is_set() or reload_event.is_set():
+            return True
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return False
         chunk = min(remaining, MAX_WAIT_INTERVAL_SECONDS)
-        if stop_event.wait(timeout=chunk):
-            return True
+        stop_event.wait(timeout=chunk)

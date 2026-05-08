@@ -344,6 +344,8 @@ The reload is **full rebuild**, not diff: blow away the entire `clients` dict an
 
 If parsing or directory creation fails during a reload, the previous state is left intact and the daemon keeps running.
 
+**In-flight scheduling waits are cancelled.** A `reload_event` (separate from `stop_event`) is set by `on_change` after every reload attempt and watched by `_wait_until` / `_interruptible_sleep`. If the runner is mid-wait when a reload arrives — e.g. sleeping until a scheduled post fires, which can be up to 24h — the wait returns early, the iteration aborts, and the outer `run_loop` re-enters `_one_iteration` against the freshly-loaded state. New identities, different keyword filters, and changed `max_posts_per_day` caps therefore take effect on the *next* post rather than the one after that. The runner clears `reload_event` at the top of each iteration so a single reload triggers exactly one re-evaluation.
+
 ---
 
 ## 11. Logging style

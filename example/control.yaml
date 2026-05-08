@@ -18,11 +18,7 @@ identities:
     enabled: true
     max_posts_per_day: 96
     sources:
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UC4DBLlq1x0AKmip1QJUcbXg
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UCYkz6A-90_N0967AEP8vKjg
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UC9S7mI6p-p1O65R8n1t9j1g
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UC52S_M9Yit4U1M9Z153k53A
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UC6px-Z_y_Xq-o9v59PZ7vow
+      #- https://www.youtube.com/feeds/videos.xml?channel_id=UC4DBLlq1x0AKmip1QJUcbXg
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCgbyN_o-Guwpyqfuuz3pyIw
     hashtags: []
     keywords_required: ["tesla", "robotaxi"]
