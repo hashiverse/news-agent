@@ -227,7 +227,6 @@ CREATE TABLE posts (
     source_url          TEXT NOT NULL,
     title               TEXT NOT NULL,
     item_guid           TEXT,
-    hashiverse_post_id  TEXT,             -- NULL when is_dry_run = 1
     is_dry_run          INTEGER NOT NULL  -- 0 or 1
 );
 CREATE INDEX idx_posts_posted_at ON posts(posted_at_unix);
@@ -283,7 +282,7 @@ The main loop (`runner.run_loop`) on each iteration:
 
 Cross-identity dedupe key: **canonical URL**, after normalisation in `url_canonicalize.canonicalize` (strip `utm_*` / `fbclid` / `gclid` / `mc_cid` / `mc_eid` / `_ga`, lowercase host, sort query params, drop fragment + trailing slash).
 
-Posts (real and dry-run) are written to the `posts` table. Dry-run rows have `is_dry_run=1` and `hashiverse_post_id=NULL`. They count toward dedupe and per-identity caps so the scheduler doesn't pick the same article twice across modes.
+Posts (real and dry-run) are written to the `posts` table. Dry-run rows have `is_dry_run=1`. They count toward dedupe and per-identity caps so the scheduler doesn't pick the same article twice across modes.
 
 ### 9.1 Post body format
 
@@ -368,24 +367,11 @@ The random suggestion is a fresh URL-safe-base64 string (cryptographically rando
 
 ## 12. Pending / known TODOs
 
-### 12.a — `--test` should use cheap argon2 parameters (NOT YET IMPLEMENTED)
-
-Currently `--test` runs production argon2 (m=1 GiB, t=4) — that's ~5 seconds per identity for first-time derivation, defeating the "fast smoke run" intent. The plan:
-
-- Add `derive_keyphrase_cheap(global, local)` to `keyphrase.py` with `m=8 MiB, t=1, p=1, output=32` and `TEST_MODE_*` constants.
-- Plumb `derive_fn` through `_start_clients_for_identities` and `_reload_state` in `cli.py` (today they call the production default).
-- When `--test` is set in `cli.run`, pass `derive_keyphrase_cheap` as the `derive_fn`.
-- Add a unit test verifying `--test` uses the cheap function.
-
-### 12.b — Bio updates
+### Bio updates
 
 `hashiverse_setup.start_hashiverse_client_for_identity` brings up the client but does NOT call `client.set_bio(nickname, status, selfie, ...)`. The control file's `nickname` / `status` / `selfie` fields are read into the `IdentityConfig` and then ignored beyond identity-label formatting.
 
 To wire this up: after client startup, call `client.set_bio(...)` with the YAML values. The hashiverse client de-dupes identical bio updates so calling it on every restart is fine. Adding to the reload path makes nickname/status edits take effect on the network.
-
-### 12.c — Hashiverse post_id capture
-
-`posting.post_or_dry_run` always records `hashiverse_post_id=None` for real posts. The hashiverse client's `post_with_preprocessing` doesn't currently return the new post's ID synchronously. When the API exposes it, capture and persist.
 
 ---
 
@@ -439,5 +425,5 @@ The Rust client carries a tokio runtime internally; dropping all references to t
 - **Run the test suite** before doing anything to confirm baseline green.
 - The user is iterating the daemon block-by-block. Each block is one logical concern; don't extrapolate across blocks unless invited.
 - When adding a feature, ask up front for any meaningfully ambiguous decision (1–3 questions max), then implement.
-- The `--test` flag is a guarantee: it MUST imply `--dry-run` and SHOULD use cheap argon2 parameters (12.a is the implementation TODO).
+- The `--test` flag is a guarantee: it MUST imply `--dry-run`.
 - Module dependencies are small and intentional. Pure functions (`url_canonicalize`, `scheduler`, `picker`) take `now_unix` / `rng` as parameters; impure modules (`runner`, `posting`) compose them with side-effecting layers (`posts_db`, hashiverse client). Keep that separation when adding code.

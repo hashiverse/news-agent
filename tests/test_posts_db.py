@@ -33,7 +33,6 @@ def _post(conn, *, when: int, salt: str, url: str, dry_run: bool = False) -> Non
         source_url="https://feed.example/rss",
         title="t",
         item_guid="g",
-        hashiverse_post_id=None if dry_run else "hv-id",
         is_dry_run=dry_run,
     )
 
@@ -101,7 +100,6 @@ def test_record_post_dry_run_round_trips_fields(conn):
         source_url="https://example.com/rss",
         title="hello",
         item_guid="urn:1",
-        hashiverse_post_id=None,
         is_dry_run=True,
     )
     posts = posts_in_last_24h_for_identity(conn, "salt-X", now)
@@ -113,7 +111,6 @@ def test_record_post_dry_run_round_trips_fields(conn):
     assert p.source_url == "https://example.com/rss"
     assert p.title == "hello"
     assert p.item_guid == "urn:1"
-    assert p.hashiverse_post_id is None
     assert p.is_dry_run is True
 
 
@@ -127,11 +124,9 @@ def test_record_post_real_run_round_trips_fields(conn):
         source_url="https://example.com/rss",
         title="real",
         item_guid=None,
-        hashiverse_post_id="abc123",
         is_dry_run=False,
     )
     posts = posts_in_last_24h_for_identity(conn, "salt-Y", now)
-    assert posts[0].hashiverse_post_id == "abc123"
     assert posts[0].is_dry_run is False
     assert posts[0].item_guid is None
 

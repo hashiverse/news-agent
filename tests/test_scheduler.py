@@ -22,7 +22,6 @@ def _post(when: int) -> PostRecord:
         source_url="https://feed/",
         title="t",
         item_guid=None,
-        hashiverse_post_id=None,
         is_dry_run=False,
     )
 

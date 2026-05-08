@@ -62,7 +62,6 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
             source_url          TEXT NOT NULL,
             title               TEXT NOT NULL,
             item_guid           TEXT,
-            hashiverse_post_id  TEXT,
             is_dry_run          INTEGER NOT NULL
         )
         """

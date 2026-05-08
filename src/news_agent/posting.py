@@ -126,10 +126,6 @@ def post_or_dry_run(
     is a faithful preview of what production would have submitted. The only
     difference is whether we hand the body to ``client.submit_post`` or just
     log it.
-
-    The hashiverse Python client API doesn't currently return the new post's
-    ID synchronously from ``submit_post`` — we record ``None`` in the history.
-    (When the API exposes the new post's ID we'll capture it.)
     """
     if now_unix is None:
         now_unix = int(time.time())
@@ -145,7 +141,6 @@ def post_or_dry_run(
             article.raw_url,
         )
         logger.info("[DRY-RUN] body: %s", html_body)
-        hashiverse_post_id: str | None = None
     else:
         logger.info(
             "%s posting: %r → %s",
@@ -154,7 +149,6 @@ def post_or_dry_run(
             article.raw_url,
         )
         client.submit_post(html_body)
-        hashiverse_post_id = None  # see docstring
 
     record_post(
         conn,
@@ -164,6 +158,5 @@ def post_or_dry_run(
         source_url=article.source_url,
         title=article.title,
         item_guid=article.item_guid,
-        hashiverse_post_id=hashiverse_post_id,
         is_dry_run=dry_run,
     )

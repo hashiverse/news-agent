@@ -333,7 +333,6 @@ def test_dry_run_records_history_with_dry_run_flag(conn, monkeypatch):
     posts = posts_in_last_24h_for_identity(conn, SALT, 2_000_000)
     assert len(posts) == 1
     assert posts[0].is_dry_run is True
-    assert posts[0].hashiverse_post_id is None
     assert posts[0].canonical_url == "https://example.com/article"
     assert posts[0].source_url == "https://feed.example/rss"
     assert posts[0].title == "An article"

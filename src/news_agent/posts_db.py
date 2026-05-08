@@ -27,7 +27,6 @@ class PostRecord:
     source_url: str
     title: str
     item_guid: str | None
-    hashiverse_post_id: str | None
     is_dry_run: bool
 
 
@@ -40,7 +39,6 @@ def record_post(
     source_url: str,
     title: str,
     item_guid: str | None,
-    hashiverse_post_id: str | None,
     is_dry_run: bool,
 ) -> None:
     """Append a row to the posts history."""
@@ -48,8 +46,8 @@ def record_post(
         """
         INSERT INTO posts (
             posted_at_unix, identity_salt, canonical_url, source_url,
-            title, item_guid, hashiverse_post_id, is_dry_run
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            title, item_guid, is_dry_run
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             posted_at_unix,
@@ -58,7 +56,6 @@ def record_post(
             source_url,
             title,
             item_guid,
-            hashiverse_post_id,
             1 if is_dry_run else 0,
         ),
     )
@@ -87,7 +84,7 @@ def posts_in_last_24h_for_identity(
     rows = conn.execute(
         """
         SELECT posted_at_unix, identity_salt, canonical_url, source_url,
-               title, item_guid, hashiverse_post_id, is_dry_run
+               title, item_guid, is_dry_run
         FROM posts
         WHERE identity_salt = ? AND posted_at_unix >= ?
         ORDER BY posted_at_unix ASC
@@ -105,6 +102,5 @@ def _row_to_record(row: tuple) -> PostRecord:
         source_url=row[3],
         title=row[4],
         item_guid=row[5],
-        hashiverse_post_id=row[6],
-        is_dry_run=bool(row[7]),
+        is_dry_run=bool(row[6]),
     )
