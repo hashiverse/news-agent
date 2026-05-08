@@ -27,6 +27,9 @@ identities:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCF1iS7Bp9_hsQphNF6o8qwQ  # Matt Pocius (Tesla Stock & Money)
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCaBOIBVD_f6eyRRRBRrCz8w  # Dirty Tesla
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCbNOk_wOA7UMvYrF7K0iBvQ  # FutureAza
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCaFXixk5MpKFHhzv1GZryAQ  # Hans Nelson
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCGrP0evjGjo4HLwWeYXDL0A  # Kim Java
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC4UwT7zCc-T_BN9_E45FVNA  # Joe Tegtmeyer
       - https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml
       - https://rss.nytimes.com/services/xml/rss/nyt/Automobiles.xml
       - https://www.theguardian.com/technology/rss
@@ -43,7 +46,7 @@ identities:
 
   - salt: "c7e3f1a2b8d4e6f9a3c7b1d5e2f8a4c6b9d3e7f1a5c8b2d6e4f9a1c3b7d5e2f8"
     nickname: "Linux YouTube (news-agent)"
-    status: "Curated Linux and FOSS content from the top YouTube channels."
+    status: "Curated Linux content from the top YouTube channels."
     enabled: true
     max_posts_per_day: 24
     sources:
@@ -61,5 +64,63 @@ identities:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCHugE6eRhqB9_AZQh4DDbIw  # Jupiter Broadcasting
     hashtags: ["linux"]
     keywords_required: ["linux"]
+    keywords_optional: []
+
+  - salt: "5b9d3e7f2a8c1b4e6d5a9f3c8b2e7d4a1f6c9b5e8d2a7f4c1b6e9d3a8f5c2b7e"
+    nickname: "Rust on YouTube (news-agent)"
+    status: "Curated Rust programming content from the top YouTube channels."
+    enabled: true
+    max_posts_per_day: 24
+    sources:
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCaYhcUwRBNscFNUKTjgPFiA  # Rust Programming Language (official)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC_iD0xppBwwsrM9DegC5cQQ  # Jon Gjengset (Crust of Rust)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCSp-OaMpsO8K0KkOqyBl7_w  # Let's Get Rusty
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCUMwY9iS8oMyWDYIe6_RmoA  # No Boilerplate
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCDCAIOguar1QWBM-UZbbAyQ  # fasterthanlime (Amos Wenger)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCjREVt2ZJU8ql-NC9Gu-TJw  # Code to the Moon
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCUyeluBRhGPCW4rPe_UvBZQ  # The PrimeTime (ThePrimeagen)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCiSIL42pQRpc-8JNiYDFyzQ  # chris biscardi
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCnHX5FjwtQpxkCGziuh4NJA  # Logan Smith (_noisecode)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCYqCZOwHbnPwyjawKfE21wg  # Tensor Programming
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UClny6qj9Mv7uFo9XGUGYQBA  # timClicks (Tim McNamara)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UChl_NKOs1qqh_x7yJfaDpDw  # Tantan (Rust gamedev)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCqMYWsCIyw82fHIGemlDPLg  # Bevy Engine
+    hashtags: ["rust"]
+    keywords_required: ["rust"]
+    keywords_optional: []
+
+  - salt: "e4a8f2c1b6d3e9f7a2c5b8d1e6f4a3c7b9d2e5f8a1c4b7d6e3f9a8c2b5d4e1f7"
+    nickname: "Geekout: maths, physics, CS (news-agent)"
+    status: "Popular science, maths and computer science from the best explainer channels on YouTube."
+    enabled: true
+    max_posts_per_day: 24
+    sources:
+      # Maths
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCYO_jab_esuFRV4b17AJtAw  # 3Blue1Brown
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCoxcjq-8xIDTYp3uz647V5A  # Numberphile
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC1_uAIS3r8Vu6JjXWvastJg  # Mathologer
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCSju5G2aFaWMqn-_0YBtq5A  # Stand-up Maths (Matt Parker)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC52kszkc08-acFOuogFl5jw  # Tibees
+      # Physics
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCP3alkHEJhoxTpy3iVON-lg  # Physics with Elliot
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCHnyfMqiRRG1u-2MsSQLbXA  # Veritasium
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCUHW94eEFW7hkUMVaZz4eDg  # minutephysics
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC1yNl2E66ZzKApQdRuTQ4tw  # Sabine Hossenfelder
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC7_gcs09iThXybpVgjHZ_7g  # PBS Space Time
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCvBqzzvUBLCs8Y7Axb-jZew  # Sixty Symbols
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCSIvk78tK2TiviLQn4fSHaw  # Up and Atom
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCEIwxahdLz7bap-VDs9h35A  # Steve Mould
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCWvq4kcdNI1r1jZKFw9TiUA  # ScienceClic English
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC1VLQPn9cYSqx8plbk9RxxQ  # The Action Lab
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCFk__1iexL3T5gvGcMpeHNA  # Looking Glass Universe
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UConVfxXodg78Tzh5nNu85Ew  # Welch Labs
+      # Computer science
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC9-y-6csu5WGm29I7JiwpnA  # Computerphile
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCbfYPyITQ-7l4upoX8nvctg  # Two Minute Papers
+      # Big science
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCTpmmkp1E4nmZqWPS-dl5bg  # Quanta Science Channel
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCRhV1rWIpm_pU19bBm_2RXw  # Sean Carroll
+    hashtags: ["science"]
+    keywords_required: []
     keywords_optional: []
 
