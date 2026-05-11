@@ -2,20 +2,23 @@
 
 For each source URL the fetcher does:
 
-0. If the cached body is younger than ``CACHE_FRESHNESS_WINDOW_SECONDS``
-   (30 min by default), return it immediately — no network call. Tight
-   poll loops on the runner side (each iteration re-fetches every source
-   URL on the way to picking the next post) would otherwise hammer the
-   feeds; this is also the only thing that helps when a server doesn't
-   honour ``If-None-Match``/``If-Modified-Since`` and always returns 200.
+0. If the cached body's per-row ``cache_valid_until_unix`` is still in the
+   future, return it immediately — no network call. Each cache write picks
+   a uniformly random expiry in `[now+20min, now+40min]` (the validity
+   window) so feeds fetched together don't all expire at the same instant
+   and stampede the upstream when they revalidate. This also covers the
+   case where a server doesn't honour ``If-None-Match`` / ``If-Modified-Since``
+   and always returns 200 — without the cache we'd burn full bandwidth
+   every iteration.
 1. Look up the previously-cached body and ETag/Last-Modified from
    :mod:`news_agent.feed_cache_db`.
 2. Issue an HTTPS ``GET`` with ``If-None-Match`` / ``If-Modified-Since``
    headers when the cache supplies them.
-3. On ``200 OK`` write the new body + new headers + ``fetched_at`` to the
-   cache and return the body.
-4. On ``304 Not Modified`` bump ``fetched_at`` only and return the cached
-   body.
+3. On ``200 OK`` write the new body + new headers + ``fetched_at`` + a
+   freshly-randomized ``cache_valid_until_unix`` to the cache and return
+   the body.
+4. On ``304 Not Modified`` bump ``fetched_at`` and refresh
+   ``cache_valid_until_unix`` only — the cached body is still good.
 5. On network or HTTP errors:
    - return the stale cached body when one exists,
    - re-raise when there's no cache to fall back to.
@@ -29,6 +32,7 @@ disk + a JSON sidecar, here it lives in SQLite.
 from __future__ import annotations
 
 import logging
+import random
 import sqlite3
 import time
 import urllib.error
@@ -45,17 +49,26 @@ logger = logging.getLogger(__name__)
 USER_AGENT = "news-agent/0.1 (+https://github.com/hashiverse/news-agent)"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
-# When the cache is younger than this, return it without hitting the network.
-# Two reasons: (a) the runner re-fetches every source every iteration of its
-# scheduling loop, which pings the feed far more often than feeds actually
-# update; (b) some servers don't honour `If-None-Match` / `If-Modified-Since`
-# and always return 200, so the conditional-GET path can't save bandwidth on
-# its own. 30 min is a comfortable middle ground for news/YouTube feeds.
-CACHE_FRESHNESS_WINDOW_SECONDS = 30 * 60
+# Per-row randomized cache validity. A new cache write picks a uniformly
+# random target between MIN and MAX seconds in the future. With many feeds
+# fetched together (e.g. at daemon startup), this naturally sprawls their
+# next-revalidation times across a 20-minute window — preventing the
+# synchronized re-fetch storm a fixed window would cause every 30 min,
+# which would otherwise hammer shared upstreams (e.g. multiple YouTube
+# channel feeds all hitting youtube.com simultaneously).
+CACHE_VALIDITY_MIN_SECONDS = 20 * 60
+CACHE_VALIDITY_MAX_SECONDS = 40 * 60
 
 
 class FeedFetchError(RuntimeError):
     """Raised when a feed cannot be fetched and no cached body is available."""
+
+
+def _next_cache_valid_until(now_unix: int, rng: random.Random) -> int:
+    """Return a randomized validity-end timestamp ``now + uniform(MIN, MAX)``."""
+    return now_unix + rng.randint(
+        CACHE_VALIDITY_MIN_SECONDS, CACHE_VALIDITY_MAX_SECONDS
+    )
 
 
 def fetch_feed_body(
@@ -65,7 +78,7 @@ def fetch_feed_body(
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     opener: urllib.request.OpenerDirector | None = None,
     now_unix: int | None = None,
-    cache_freshness_window: float = CACHE_FRESHNESS_WINDOW_SECONDS,
+    rng: random.Random | None = None,
 ) -> bytes:
     """Return the (possibly cached) body of ``source_url``.
 
@@ -73,30 +86,33 @@ def fetch_feed_body(
     cached. Transient errors over a populated cache return the stale body
     with a logged warning.
 
-    ``cache_freshness_window`` overrides the module-default cache-reuse
-    window in seconds. Pass ``0`` to disable the short-circuit and force
-    every call through the conditional-GET path (mostly useful in tests).
+    ``rng`` controls the randomized cache-validity jitter on writes. Defaults
+    to a fresh ``random.Random()`` (non-deterministic — fine for production).
+    Tests should pass an explicit seeded ``random.Random(seed)``.
     """
     if now_unix is None:
         now_unix = int(time.time())
+    if rng is None:
+        rng = random.Random()
 
     cached = get_cached(conn, source_url)
 
-    # Short-circuit: cache is younger than the freshness window → return it
-    # without making any network request at all. Logged at DEBUG (not INFO)
+    # Short-circuit: cache is still inside its randomized validity window →
+    # return it without any network request. Logged at DEBUG (not INFO)
     # because this is the boring steady-state path — the runner re-fetches
-    # every source on every iteration, and we don't want to spam stderr with
-    # "skipped network" lines. Real network events (200, 304) stay at INFO.
-    if cached is not None:
+    # every source on every iteration, and we don't want to spam stderr
+    # with "skipped network" lines. Real network events (200, 304) stay at INFO.
+    if cached is not None and now_unix < cached.cache_valid_until_unix:
         cache_age = max(0, now_unix - cached.fetched_at_unix)
-        if cache_age < cache_freshness_window:
-            logger.debug(
-                "fetched %s (%d bytes, from cache, age %ds, fresh — skipped network)",
-                source_url,
-                len(cached.body),
-                cache_age,
-            )
-            return cached.body
+        valid_for = cached.cache_valid_until_unix - now_unix
+        logger.debug(
+            "fetched %s (%d bytes, from cache, age %ds, valid for another %ds — skipped network)",
+            source_url,
+            len(cached.body),
+            cache_age,
+            valid_for,
+        )
+        return cached.body
 
     request = urllib.request.Request(
         source_url, headers={"User-Agent": USER_AGENT}
@@ -120,6 +136,7 @@ def fetch_feed_body(
             etag=etag,
             last_modified=last_modified,
             fetched_at_unix=now_unix,
+            cache_valid_until_unix=_next_cache_valid_until(now_unix, rng),
         )
         logger.info(
             "fetched %s (%d bytes, downloaded)", source_url, len(body)
@@ -127,7 +144,12 @@ def fetch_feed_body(
         return body
     except urllib.error.HTTPError as exc:
         if exc.code == 304 and cached is not None:
-            update_fetched_at(conn, source_url, now_unix)
+            update_fetched_at(
+                conn,
+                source_url,
+                now_unix,
+                _next_cache_valid_until(now_unix, rng),
+            )
             cache_age = max(0, now_unix - cached.fetched_at_unix)
             logger.info(
                 "fetched %s (%d bytes, from cache, age %ds, 304 not modified)",

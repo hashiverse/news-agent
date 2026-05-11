@@ -36,6 +36,7 @@ def test_save_then_get_round_trips(conn):
         etag='"abc"',
         last_modified="Wed, 07 May 2026 09:00:00 GMT",
         fetched_at_unix=1234567890,
+        cache_valid_until_unix=1234569690,
     )
     cached = get_cached(conn, URL)
     assert cached is not None
@@ -44,6 +45,7 @@ def test_save_then_get_round_trips(conn):
     assert cached.etag == '"abc"'
     assert cached.last_modified == "Wed, 07 May 2026 09:00:00 GMT"
     assert cached.fetched_at_unix == 1234567890
+    assert cached.cache_valid_until_unix == 1234569690
 
 
 def test_save_replaces_existing(conn):
@@ -54,6 +56,7 @@ def test_save_replaces_existing(conn):
         etag='"v1"',
         last_modified=None,
         fetched_at_unix=1,
+        cache_valid_until_unix=1801,
     )
     save_cache(
         conn,
@@ -62,11 +65,13 @@ def test_save_replaces_existing(conn):
         etag='"v2"',
         last_modified=None,
         fetched_at_unix=2,
+        cache_valid_until_unix=1802,
     )
     cached = get_cached(conn, URL)
     assert cached.body == b"v2"
     assert cached.etag == '"v2"'
     assert cached.fetched_at_unix == 2
+    assert cached.cache_valid_until_unix == 1802
 
 
 def test_save_with_null_etag_and_last_modified(conn):
@@ -78,13 +83,16 @@ def test_save_with_null_etag_and_last_modified(conn):
         etag=None,
         last_modified=None,
         fetched_at_unix=1,
+        cache_valid_until_unix=1801,
     )
     cached = get_cached(conn, URL)
     assert cached.etag is None
     assert cached.last_modified is None
 
 
-def test_update_fetched_at_only_touches_timestamp(conn):
+def test_update_fetched_at_refreshes_validity_window(conn):
+    """304 path: bump both fetched_at and cache_valid_until_unix; leave the
+    body, etag, and last_modified alone."""
     save_cache(
         conn,
         source_url=URL,
@@ -92,25 +100,29 @@ def test_update_fetched_at_only_touches_timestamp(conn):
         etag='"v1"',
         last_modified="Wed, 01 Jan 2025 00:00:00 GMT",
         fetched_at_unix=100,
+        cache_valid_until_unix=1900,
     )
-    update_fetched_at(conn, URL, fetched_at_unix=200)
+    update_fetched_at(conn, URL, fetched_at_unix=200, cache_valid_until_unix=2200)
     cached = get_cached(conn, URL)
     assert cached.body == b"original"
     assert cached.etag == '"v1"'
     assert cached.last_modified == "Wed, 01 Jan 2025 00:00:00 GMT"
     assert cached.fetched_at_unix == 200
+    assert cached.cache_valid_until_unix == 2200
 
 
 def test_multiple_urls_stored_independently(conn):
     save_cache(
         conn, source_url="https://a/", body=b"A", etag=None,
-        last_modified=None, fetched_at_unix=1,
+        last_modified=None, fetched_at_unix=1, cache_valid_until_unix=1801,
     )
     save_cache(
         conn, source_url="https://b/", body=b"B", etag=None,
-        last_modified=None, fetched_at_unix=2,
+        last_modified=None, fetched_at_unix=2, cache_valid_until_unix=1802,
     )
     a = get_cached(conn, "https://a/")
     b = get_cached(conn, "https://b/")
     assert a.body == b"A"
     assert b.body == b"B"
+    assert a.cache_valid_until_unix == 1801
+    assert b.cache_valid_until_unix == 1802

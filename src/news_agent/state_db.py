@@ -71,14 +71,33 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_identity  ON posts(identity_salt)")
 
     # feed_cache: per-source-URL cached body + conditional-GET headers.
+    # `cache_valid_until_unix` is the moment past which the cache is considered
+    # stale and the fetcher must revalidate. Each cache write picks a random
+    # value in `[now+20min, now+40min]` so feeds fetched together (e.g. at
+    # daemon startup) don't all expire at the same moment 30 minutes later —
+    # avoids a synchronized re-fetch storm against shared upstreams.
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS feed_cache (
-            source_url      TEXT PRIMARY KEY,
-            body            BLOB NOT NULL,
-            etag            TEXT,
-            last_modified   TEXT,
-            fetched_at_unix INTEGER NOT NULL
+            source_url             TEXT PRIMARY KEY,
+            body                   BLOB NOT NULL,
+            etag                   TEXT,
+            last_modified          TEXT,
+            fetched_at_unix        INTEGER NOT NULL,
+            cache_valid_until_unix INTEGER NOT NULL DEFAULT 0
         )
         """
     )
+
+    # Migration: legacy databases predate cache_valid_until_unix. Add it now.
+    # SQLite ALTER TABLE ADD COLUMN with DEFAULT works on populated tables;
+    # default 0 means "already expired" so the next access revalidates and
+    # stamps a real future timestamp.
+    existing_feed_cache_cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(feed_cache)")
+    }
+    if "cache_valid_until_unix" not in existing_feed_cache_cols:
+        conn.execute(
+            "ALTER TABLE feed_cache ADD COLUMN cache_valid_until_unix "
+            "INTEGER NOT NULL DEFAULT 0"
+        )

@@ -207,11 +207,12 @@ CREATE INDEX idx_posts_canonical ON posts(canonical_url);
 CREATE INDEX idx_posts_identity  ON posts(identity_salt);
 
 CREATE TABLE feed_cache (
-    source_url      TEXT PRIMARY KEY,
-    body            BLOB NOT NULL,
-    etag            TEXT,
-    last_modified   TEXT,
-    fetched_at_unix INTEGER NOT NULL
+    source_url             TEXT PRIMARY KEY,
+    body                   BLOB NOT NULL,
+    etag                   TEXT,
+    last_modified          TEXT,
+    fetched_at_unix        INTEGER NOT NULL,
+    cache_valid_until_unix INTEGER NOT NULL DEFAULT 0  -- per-row randomized expiry
 );
 ```
 
@@ -310,8 +311,10 @@ The `plugin-urlpreview-card*` CSS classes are styled by the consuming client at 
 
 `rss_fetcher.fetch_feed_body` is cross-identity (keyed solely on `source_url`), so identities sharing a feed share the cache row. Three-layer freshness logic:
 
-1. **30-minute freshness window** (default `CACHE_FRESHNESS_WINDOW_SECONDS`). If the cached body is younger than this, return it without any network call. Logged at DEBUG (silent at INFO) — this is the steady-state path and would otherwise spam stderr because the runner re-fetches every source on every iteration.
-2. **Conditional GET.** Older cache → issue an HTTPS `GET` with `If-None-Match` / `If-Modified-Since` if the server gave us those headers. `200 OK` replaces the cached body and headers; `304 Not Modified` bumps `fetched_at` only.
+1. **Per-row randomized validity window** (`CACHE_VALIDITY_MIN_SECONDS` … `CACHE_VALIDITY_MAX_SECONDS`, currently 20–40 min). On every cache write the fetcher picks a uniformly random `cache_valid_until_unix = now + rng.randint(MIN, MAX)` and stores it on the row. As long as `now < cache_valid_until_unix`, the cached body is returned without any network call. Logged at DEBUG (silent at INFO) — this is the steady-state path and would otherwise spam stderr because the runner re-fetches every source on every iteration.
+
+   The randomization matters: a fixed window would synchronize all feed revalidations, so 30 minutes after startup every feed would re-fetch in the same iteration. With many feeds from one provider (e.g. several YouTube channel feeds, all served from `youtube.com`), that's a self-inflicted DDoS-shaped traffic burst against the upstream every half-hour. With independent random expiries, revalidation times sprawl evenly across the 20-minute window.
+2. **Conditional GET.** Expired cache → issue an HTTPS `GET` with `If-None-Match` / `If-Modified-Since` if the server gave us those headers. `200 OK` replaces the cached body and headers; `304 Not Modified` bumps `fetched_at_unix` only. Both write paths refresh `cache_valid_until_unix` with a freshly-randomized value.
 3. **Stale-cache fallback on errors.** If the network call fails (connect error, 5xx, timeout) and a cache exists, return the stale body with a warning. No cache → `FeedFetchError`.
 
 Real network events (200, 304) log at INFO; the freshness-window short-circuit logs at DEBUG.

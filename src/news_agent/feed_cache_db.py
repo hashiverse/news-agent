@@ -21,6 +21,7 @@ class CachedFeed:
     etag: str | None
     last_modified: str | None
     fetched_at_unix: int
+    cache_valid_until_unix: int
 
 
 def get_cached(
@@ -29,7 +30,8 @@ def get_cached(
     """Return the cached feed body for ``source_url`` or ``None``."""
     row = conn.execute(
         """
-        SELECT source_url, body, etag, last_modified, fetched_at_unix
+        SELECT source_url, body, etag, last_modified, fetched_at_unix,
+               cache_valid_until_unix
         FROM feed_cache
         WHERE source_url = ?
         """,
@@ -43,6 +45,7 @@ def get_cached(
         etag=row[2],
         last_modified=row[3],
         fetched_at_unix=row[4],
+        cache_valid_until_unix=row[5],
     )
 
 
@@ -54,23 +57,39 @@ def save_cache(
     etag: str | None,
     last_modified: str | None,
     fetched_at_unix: int,
+    cache_valid_until_unix: int,
 ) -> None:
     """Insert or replace the cache row for ``source_url``."""
     conn.execute(
         """
         INSERT OR REPLACE INTO feed_cache (
-            source_url, body, etag, last_modified, fetched_at_unix
-        ) VALUES (?, ?, ?, ?, ?)
+            source_url, body, etag, last_modified, fetched_at_unix,
+            cache_valid_until_unix
+        ) VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (source_url, body, etag, last_modified, fetched_at_unix),
+        (
+            source_url,
+            body,
+            etag,
+            last_modified,
+            fetched_at_unix,
+            cache_valid_until_unix,
+        ),
     )
 
 
 def update_fetched_at(
-    conn: sqlite3.Connection, source_url: str, fetched_at_unix: int
+    conn: sqlite3.Connection,
+    source_url: str,
+    fetched_at_unix: int,
+    cache_valid_until_unix: int,
 ) -> None:
-    """Bump ``fetched_at_unix`` without touching body or headers (for 304 hits)."""
+    """Bump ``fetched_at_unix`` and refresh ``cache_valid_until_unix`` without
+    touching body or headers (for 304 hits — the body we already have is still
+    current, so we extend its validity window)."""
     conn.execute(
-        "UPDATE feed_cache SET fetched_at_unix = ? WHERE source_url = ?",
-        (fetched_at_unix, source_url),
+        "UPDATE feed_cache "
+        "SET fetched_at_unix = ?, cache_valid_until_unix = ? "
+        "WHERE source_url = ?",
+        (fetched_at_unix, cache_valid_until_unix, source_url),
     )
