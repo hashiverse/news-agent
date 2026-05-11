@@ -23,9 +23,11 @@ from news_agent.posts_db import (
     posted_canonical_urls_in_last_24h,
     posts_in_last_24h_for_identity,
 )
+from news_agent.picker import PickerCounts
 from news_agent.runner import (
     _format_duration,
     _format_local_time,
+    _format_picker_counts,
     _interruptible_sleep,
     _truncate_title,
     _wait_until,
@@ -508,6 +510,120 @@ def test_loop_logs_next_scheduled_identity_when_nothing_eligible(conn, caplog):
     assert "next scheduled is" in msg
     # Format includes a time of day and a duration.
     assert " at " in msg and " in " in msg
+
+
+# ---------------------------------------------------------------------------
+# Per-identity picker rejection breakdown — when the picker returns nothing,
+# the runner logs a one-line summary so the operator can see *why* nothing
+# was eligible.
+
+
+def test_format_picker_counts_omits_zero_buckets():
+    counts = PickerCounts(
+        total_candidates=10,
+        rejected_dedupe=7,
+        rejected_no_publish_date=0,
+        rejected_stale=2,
+        rejected_future_dated=0,
+        rejected_keywords_required=1,
+        rejected_keywords_optional=0,
+        eligible=0,
+    )
+    line = _format_picker_counts(counts)
+    # Non-zero buckets appear in source order.
+    assert "10 candidates → 7 dedupe, 2 stale, 1 missing required keyword → 0 eligible" == line
+
+
+def test_format_picker_counts_all_eligible():
+    counts = PickerCounts(
+        total_candidates=3,
+        rejected_dedupe=0,
+        rejected_no_publish_date=0,
+        rejected_stale=0,
+        rejected_future_dated=0,
+        rejected_keywords_required=0,
+        rejected_keywords_optional=0,
+        eligible=3,
+    )
+    line = _format_picker_counts(counts)
+    assert line == "3 candidates → no rejections → 3 eligible"
+
+
+def test_format_picker_counts_empty_pool():
+    counts = PickerCounts(
+        total_candidates=0,
+        rejected_dedupe=0,
+        rejected_no_publish_date=0,
+        rejected_stale=0,
+        rejected_future_dated=0,
+        rejected_keywords_required=0,
+        rejected_keywords_optional=0,
+        eligible=0,
+    )
+    assert _format_picker_counts(counts) == "0 candidates → no rejections → 0 eligible"
+
+
+def test_logs_picker_breakdown_when_nothing_eligible(conn, caplog):
+    """After the loop posts an article, the next iteration's picker finds
+    the same article already in the dedupe set and rejects it. The runner
+    must log the per-reason breakdown at INFO so the operator can see why."""
+    body = _make_rss(
+        title="Once",
+        url="https://example.com/once",
+        pub_date=time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime()),
+    )
+    handler = _make_static_handler(body)
+    with _running_server(handler) as base:
+        source_url = f"{base}/feed.xml"
+        identity = _identity(SALT_A, "Dedupe canary", source_url)
+        state = RuntimeState(
+            RuntimeSnapshot(control=ControlConfig(identities=(identity,)))
+        )
+        clients: dict[str, object] = {SALT_A: _FakeClient()}
+        stop_event = threading.Event()
+
+        thread = threading.Thread(
+            target=run_loop,
+            kwargs=dict(
+                state=state,
+                clients=clients,
+                conn=conn,
+                stop_event=stop_event,
+                reload_event=threading.Event(),
+                dry_run=True,
+                rng=_NoJitterRandom(),
+            ),
+            daemon=True,
+        )
+        with caplog.at_level("INFO", logger="news_agent.runner"):
+            thread.start()
+            # Wait for the breakdown line that fires once the article is
+            # in the dedupe set. The loop posts on iteration 1, hits the
+            # dedupe rejection on iteration 2 — both happen within ~1s
+            # of the test starting.
+            captured = _wait_for(
+                lambda: any(
+                    "no eligible article for" in r.getMessage()
+                    and "dedupe" in r.getMessage()
+                    for r in caplog.records
+                ),
+                timeout=10.0,
+            )
+            stop_event.set()
+            thread.join(timeout=5)
+
+    assert captured, "expected breakdown log line citing dedupe"
+    breakdown = next(
+        r.getMessage()
+        for r in caplog.records
+        if "no eligible article for" in r.getMessage()
+    )
+    assert "Dedupe canary" in breakdown
+    assert "1 dedupe" in breakdown
+    assert "→ 0 eligible" in breakdown
+    # Other buckets should not appear because they had zero rejections.
+    assert "stale" not in breakdown
+    assert "no-date" not in breakdown
 
 
 # ---------------------------------------------------------------------------

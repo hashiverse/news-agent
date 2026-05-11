@@ -7,9 +7,18 @@ import random
 import pytest
 
 from news_agent import picker
-from news_agent.picker import pick_article, set_verbose_filtering
+from news_agent.picker import (
+    PickerResult,
+    pick_article,
+    set_verbose_filtering,
+)
 from news_agent.posts_db import ONE_DAY_SECONDS
 from news_agent.rss_parser import Article
+
+
+def _pa(**kwargs) -> Article | None:
+    """Adapter — most legacy tests only care about the chosen article."""
+    return pick_article(**kwargs).chosen
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +51,7 @@ def test_picks_only_eligible_article():
         _article(url="https://x/a", published_at=now - 3600),  # eligible
         _article(url="https://x/old", published_at=now - 2 * ONE_DAY_SECONDS),  # too old
     ]
-    chosen = pick_article(
+    chosen = _pa(
         articles=articles,
         recently_posted_canonical_urls=set(),
         now_unix=now,
@@ -58,7 +67,7 @@ def test_excludes_already_posted_urls():
         _article(url="https://x/posted", published_at=now - 3600),
         _article(url="https://x/fresh", published_at=now - 1800),
     ]
-    chosen = pick_article(
+    chosen = _pa(
         articles=articles,
         recently_posted_canonical_urls={"https://x/posted"},
         now_unix=now,
@@ -74,7 +83,7 @@ def test_returns_none_when_nothing_eligible():
         _article(url="https://x/old", published_at=now - 2 * ONE_DAY_SECONDS),
         _article(url="https://x/posted", published_at=now - 3600),
     ]
-    chosen = pick_article(
+    chosen = _pa(
         articles=articles,
         recently_posted_canonical_urls={"https://x/posted"},
         now_unix=now,
@@ -88,7 +97,7 @@ def test_articles_with_no_pubdate_are_skipped():
     articles = [
         _article(url="https://x/no-date", published_at=None),
     ]
-    chosen = pick_article(
+    chosen = _pa(
         articles=articles,
         recently_posted_canonical_urls=set(),
         now_unix=now,
@@ -103,7 +112,7 @@ def test_far_future_articles_are_skipped():
     articles = [
         _article(url="https://x/future", published_at=now + 3600),
     ]
-    chosen = pick_article(
+    chosen = _pa(
         articles=articles,
         recently_posted_canonical_urls=set(),
         now_unix=now,
@@ -118,7 +127,7 @@ def test_60s_clock_skew_tolerance():
     articles = [
         _article(url="https://x/just-now", published_at=now + 30),
     ]
-    chosen = pick_article(
+    chosen = _pa(
         articles=articles,
         recently_posted_canonical_urls=set(),
         now_unix=now,
@@ -134,7 +143,7 @@ def test_random_choice_is_uniform_across_eligible():
     articles = [_article(url=u, published_at=now - 1800) for u in urls]
     seen: set[str] = set()
     for seed in range(100):
-        chosen = pick_article(
+        chosen = _pa(
             articles=articles,
             recently_posted_canonical_urls=set(),
             now_unix=now,
@@ -150,13 +159,13 @@ def test_seeded_rng_is_deterministic():
     articles = [
         _article(url=f"https://x/{i}", published_at=now - 1800) for i in range(5)
     ]
-    a = pick_article(
+    a = _pa(
         articles=articles,
         recently_posted_canonical_urls=set(),
         now_unix=now,
         rng=random.Random(42),
     )
-    b = pick_article(
+    b = _pa(
         articles=articles,
         recently_posted_canonical_urls=set(),
         now_unix=now,
@@ -167,7 +176,7 @@ def test_seeded_rng_is_deterministic():
 
 
 def test_empty_articles_returns_none():
-    chosen = pick_article(
+    chosen = _pa(
         articles=[],
         recently_posted_canonical_urls=set(),
         now_unix=10_000,
@@ -193,7 +202,7 @@ def _pick(articles, *, keywords_required=(), keywords_optional=()):
         rng=random.Random(0),
         keywords_required=keywords_required,
         keywords_optional=keywords_optional,
-    )
+    ).chosen
 
 
 def test_no_keywords_means_no_filter():
@@ -215,7 +224,7 @@ def test_keywords_required_all_must_match_in_title_or_summary():
             now_unix=10_000,
             rng=random.Random(seed),
             keywords_required=("rust", "async"),
-        )
+        ).chosen
         assert chosen is not None
         eligible_urls.add(chosen.canonical_url)
     assert eligible_urls == {"https://x/a", "https://x/c"}
@@ -238,7 +247,7 @@ def test_keywords_optional_any_match_is_enough():
             now_unix=10_000,
             rng=random.Random(seed),
             keywords_optional=("rust", "wasm"),
-        )
+        ).chosen
         assert chosen is not None
         eligible.add(chosen.canonical_url)
     assert eligible == {"https://x/a", "https://x/c"}
@@ -265,7 +274,7 @@ def test_required_and_optional_combined():
             rng=random.Random(seed),
             keywords_required=("rust",),
             keywords_optional=("async", "threading"),
-        )
+        ).chosen
         assert chosen is not None
         eligible.add(chosen.canonical_url)
     assert eligible == {"https://x/yes", "https://x/both"}
@@ -422,3 +431,94 @@ def test_keyword_acceptance_does_not_log_rejection(caplog):
         chosen = _pick([a], keywords_required=("rust",))
     assert chosen is a
     assert not any("keyword filter rejected" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# PickerResult.counts — per-reason rejection tally so the runner can log
+# "why nothing eligible" without each rejection emitting its own log line.
+
+
+def test_pick_article_returns_counts_for_dedupe_only_pool():
+    """Every article is dedupe-rejected → counts.rejected_dedupe == N, rest 0."""
+    now = 10_000
+    articles = [
+        _article(url=f"https://x/{i}", published_at=now - 1800) for i in range(4)
+    ]
+    result = pick_article(
+        articles=articles,
+        recently_posted_canonical_urls={a.canonical_url for a in articles},
+        now_unix=now,
+        rng=random.Random(0),
+    )
+    assert isinstance(result, PickerResult)
+    assert result.chosen is None
+    assert result.counts.total_candidates == 4
+    assert result.counts.rejected_dedupe == 4
+    assert result.counts.rejected_no_publish_date == 0
+    assert result.counts.rejected_stale == 0
+    assert result.counts.rejected_future_dated == 0
+    assert result.counts.rejected_keywords_required == 0
+    assert result.counts.rejected_keywords_optional == 0
+    assert result.counts.eligible == 0
+
+
+def test_pick_article_returns_counts_for_mixed_rejection_reasons():
+    now = 10_000
+    articles = [
+        _article(url="https://x/dup", published_at=now - 1800),          # dedupe
+        _article(url="https://x/old1", published_at=now - 2 * ONE_DAY_SECONDS),  # stale
+        _article(url="https://x/old2", published_at=now - 3 * ONE_DAY_SECONDS),  # stale
+        _article(url="https://x/no-date", published_at=None),            # no_publish_date
+        _article(url="https://x/future", published_at=now + 7200),       # future_dated
+        _article(url="https://x/ok", published_at=now - 1800),           # eligible
+    ]
+    result = pick_article(
+        articles=articles,
+        recently_posted_canonical_urls={"https://x/dup"},
+        now_unix=now,
+        rng=random.Random(0),
+    )
+    assert result.chosen is not None
+    assert result.chosen.canonical_url == "https://x/ok"
+    assert result.counts.total_candidates == 6
+    assert result.counts.rejected_dedupe == 1
+    assert result.counts.rejected_no_publish_date == 1
+    assert result.counts.rejected_stale == 2
+    assert result.counts.rejected_future_dated == 1
+    assert result.counts.rejected_keywords_required == 0
+    assert result.counts.rejected_keywords_optional == 0
+    assert result.counts.eligible == 1
+
+
+def test_pick_article_counters_exclusive_first_reason_wins():
+    """An article that would fail BOTH dedupe AND keyword filtering counts
+    only as `dedupe` — the first failing check in source order is the bucket
+    the article goes into. Pins the exclusive-bucket semantic the runner
+    relies on for `total_candidates == sum(rejections) + eligible`."""
+    now = 10_000
+    a = _article(
+        url="https://x/both",
+        published_at=now - 1800,
+        title="Cooking with cheese",
+    )
+    result = pick_article(
+        articles=[a],
+        recently_posted_canonical_urls={"https://x/both"},
+        now_unix=now,
+        rng=random.Random(0),
+        keywords_required=("rust",),
+    )
+    assert result.chosen is None
+    assert result.counts.rejected_dedupe == 1
+    assert result.counts.rejected_keywords_required == 0
+    # Conservation: rejections + eligible == total
+    counts = result.counts
+    total_rejected = (
+        counts.rejected_dedupe
+        + counts.rejected_no_publish_date
+        + counts.rejected_stale
+        + counts.rejected_future_dated
+        + counts.rejected_keywords_required
+        + counts.rejected_keywords_optional
+    )
+    assert total_rejected + counts.eligible == counts.total_candidates

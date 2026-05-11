@@ -40,6 +40,8 @@ from __future__ import annotations
 import logging
 import random
 from collections.abc import Sequence
+from dataclasses import dataclass
+from enum import StrEnum
 
 from news_agent.posts_db import ONE_DAY_SECONDS
 from news_agent.rss_parser import Article
@@ -68,6 +70,44 @@ def set_verbose_filtering(enabled: bool) -> None:
     _VERBOSE_FILTERING = enabled
 
 
+class RejectionReason(StrEnum):
+    """First failing eligibility check for an article."""
+
+    DEDUPE = "dedupe"
+    NO_PUBLISH_DATE = "no_publish_date"
+    STALE = "stale"
+    FUTURE_DATED = "future_dated"
+    KEYWORDS_REQUIRED = "keywords_required"
+    KEYWORDS_OPTIONAL = "keywords_optional"
+
+
+@dataclass(frozen=True)
+class PickerCounts:
+    """How many candidates were rejected for each reason.
+
+    Per-article exclusive: each article counts in exactly one bucket (the
+    first failing check). ``sum(rejected_*) + eligible == total_candidates``.
+    """
+
+    total_candidates: int
+    rejected_dedupe: int
+    rejected_no_publish_date: int
+    rejected_stale: int
+    rejected_future_dated: int
+    rejected_keywords_required: int
+    rejected_keywords_optional: int
+    eligible: int
+
+
+@dataclass(frozen=True)
+class PickerResult:
+    """Outcome of one ``pick_article`` call: optional chosen article plus
+    rejection counters the caller can log for diagnosability."""
+
+    chosen: Article | None
+    counts: PickerCounts
+
+
 def pick_article(
     *,
     articles: Sequence[Article],
@@ -76,46 +116,66 @@ def pick_article(
     rng: random.Random,
     keywords_required: Sequence[str] = (),
     keywords_optional: Sequence[str] = (),
-) -> Article | None:
-    """Return one eligible article, or ``None`` if no candidate qualifies.
+) -> PickerResult:
+    """Return a :class:`PickerResult` carrying one eligible article (or
+    ``None``) plus per-reason rejection counts.
 
     ``keywords_required`` / ``keywords_optional`` should be lower-cased by
     the caller (see ``IdentityConfig``); the haystack is also lower-cased
     before substring matching.
     """
-    eligible = [
-        article
-        for article in articles
-        if _is_eligible(
+    eligible: list[Article] = []
+    tally = {reason: 0 for reason in RejectionReason}
+    for article in articles:
+        reason = _classify(
             article,
             recently_posted_canonical_urls,
             now_unix,
             keywords_required,
             keywords_optional,
         )
-    ]
-    if not eligible:
-        return None
-    return rng.choice(eligible)
+        if reason is None:
+            eligible.append(article)
+        else:
+            tally[reason] += 1
+
+    counts = PickerCounts(
+        total_candidates=len(articles),
+        rejected_dedupe=tally[RejectionReason.DEDUPE],
+        rejected_no_publish_date=tally[RejectionReason.NO_PUBLISH_DATE],
+        rejected_stale=tally[RejectionReason.STALE],
+        rejected_future_dated=tally[RejectionReason.FUTURE_DATED],
+        rejected_keywords_required=tally[RejectionReason.KEYWORDS_REQUIRED],
+        rejected_keywords_optional=tally[RejectionReason.KEYWORDS_OPTIONAL],
+        eligible=len(eligible),
+    )
+    chosen = rng.choice(eligible) if eligible else None
+    return PickerResult(chosen=chosen, counts=counts)
 
 
-def _is_eligible(
+def _classify(
     article: Article,
     recently_posted: set[str],
     now_unix: int,
     keywords_required: Sequence[str],
     keywords_optional: Sequence[str],
-) -> bool:
+) -> RejectionReason | None:
+    """Return the first failing eligibility reason, or ``None`` if eligible.
+
+    Check order is significant: a single article fails at most one reason,
+    and ``pick_article`` tallies that reason into its counter. Tests in
+    ``test_picker.py`` pin this exclusive-bucket behaviour.
+    """
     if article.canonical_url in recently_posted:
-        return False
+        return RejectionReason.DEDUPE
     if article.published_at_unix is None:
-        return False
+        return RejectionReason.NO_PUBLISH_DATE
     if article.published_at_unix < now_unix - ONE_DAY_SECONDS:
-        return False
+        return RejectionReason.STALE
     if article.published_at_unix > now_unix + 60:
         # Slight tolerance for clock skew: future-dated more than 60s out is
         # almost certainly a feed bug. Skip.
-        return False
+        return RejectionReason.FUTURE_DATED
     if keywords_required or keywords_optional:
         # Strip HTML so we match the visible text only, then strip `#tag`
         # tokens so SEO/hashtag dumps (`... #tesla #robotaxi #FSD`) can't
@@ -132,7 +192,7 @@ def _is_eligible(
                         missing,
                         _truncate_for_log(haystack),
                     )
-                return False
+                return RejectionReason.KEYWORDS_REQUIRED
         if keywords_optional and not any(kw in haystack for kw in keywords_optional):
             if _VERBOSE_FILTERING:
                 logger.info(
@@ -141,8 +201,8 @@ def _is_eligible(
                     list(keywords_optional),
                     _truncate_for_log(haystack),
                 )
-            return False
-    return True
+            return RejectionReason.KEYWORDS_OPTIONAL
+    return None
 
 
 def _truncate_for_log(text: str) -> str:

@@ -30,7 +30,7 @@ import time
 from collections.abc import Iterable
 
 from news_agent.config import IdentityConfig
-from news_agent.picker import pick_article
+from news_agent.picker import PickerCounts, pick_article
 from news_agent.posting import post_or_dry_run
 from news_agent.posts_db import (
     posted_canonical_urls_in_last_24h,
@@ -215,7 +215,7 @@ def _find_soonest_with_eligible_content(
         if identity.salt not in clients:
             continue
         articles = _gather_articles_for_identity(identity, conn)
-        chosen = pick_article(
+        result = pick_article(
             articles=articles,
             recently_posted_canonical_urls=recently_posted,
             now_unix=now_unix,
@@ -223,13 +223,51 @@ def _find_soonest_with_eligible_content(
             keywords_required=identity.keywords_required,
             keywords_optional=identity.keywords_optional,
         )
-        if chosen is not None:
-            return next_t, identity, chosen
-        logger.debug(
-            "no eligible article for %s — trying next identity",
+        if result.chosen is not None:
+            return next_t, identity, result.chosen
+        # No eligible article. Log the per-reason breakdown at INFO so the
+        # operator can see *why* nothing made the cut — without this they're
+        # left guessing whether it's dedupe (healthy), feed quality (no
+        # publish dates), or a misconfigured keyword filter.
+        logger.info(
+            "no eligible article for %s: %s",
             identity.log_label,
+            _format_picker_counts(result.counts),
         )
     return None
+
+
+# Fixed order matches the check order in picker._classify so the operator
+# sees buckets in the order they were tested. Short labels keep the log
+# line scannable.
+_PICKER_COUNT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("rejected_dedupe", "dedupe"),
+    ("rejected_no_publish_date", "no-date"),
+    ("rejected_stale", "stale"),
+    ("rejected_future_dated", "future-dated"),
+    ("rejected_keywords_required", "missing required keyword"),
+    ("rejected_keywords_optional", "no optional keyword matched"),
+)
+
+
+def _format_picker_counts(counts: PickerCounts) -> str:
+    """Render a one-line breakdown of why nothing was eligible.
+
+    Example: ``47 candidates → 40 dedupe, 5 stale, 2 no-date → 0 eligible``.
+    Zero buckets are omitted to keep the line short. When every candidate
+    was rejected for the same reason the line collapses to one bucket,
+    which is exactly the cue the operator needs to spot a misconfig.
+    """
+    buckets = [
+        f"{getattr(counts, field)} {label}"
+        for field, label in _PICKER_COUNT_FIELDS
+        if getattr(counts, field) > 0
+    ]
+    breakdown = ", ".join(buckets) if buckets else "no rejections"
+    return (
+        f"{counts.total_candidates} candidates → {breakdown} "
+        f"→ {counts.eligible} eligible"
+    )
 
 
 def _gather_articles_for_identity(
