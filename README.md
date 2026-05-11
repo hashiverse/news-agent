@@ -176,7 +176,7 @@ A **cross-identity duplicate-source warning** fires at load time if the same RSS
     │   └── control.yaml.meta.json                # {url, etag, last_modified, fetched_at}
     ├── <local_salt_A>/                           # per-identity dir (named after the salt)
     │   ├── client_id.hex                         # cached client_id; skipping argon2 on restart
-    │   ├── last_bio.json                         # last bio sent to hashiverse — gates set_bio (production only writes here)
+    │   ├── last_bio.json                         # last bio sent (or dry-run simulated) — gates set_bio so reloads don't refire
     │   └── (hashiverse client data dir — encrypted with NEWS_AGENT_GLOBAL_SALT)
     └── <local_salt_B>/
         └── ...

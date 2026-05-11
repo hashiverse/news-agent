@@ -166,9 +166,11 @@ def update_bio_if_changed(
     de-dupe at the daemon layer to prevent redundant meta-posts on every
     restart and reload.
 
-    Dry-run mode logs what would have been sent and returns without calling
-    the network. The cache file is NOT updated in dry-run, so a subsequent
-    production run will faithfully send the change.
+    Dry-run mode logs what would have been sent and skips the actual
+    ``client.set_bio`` call — but the cache file IS updated, so a subsequent
+    dry-run reload stays silent (matching the production steady state).
+    This makes dry-run a faithful preview of the production state machine;
+    the only divergence is the network side effect.
     """
     current = _current_bio_dict(identity)
     cached = _load_last_bio(identity_dir)
@@ -178,29 +180,36 @@ def update_bio_if_changed(
             identity.log_label,
         )
         return False
+
+    # Bio differs. In dry-run we still record what production would have sent
+    # so subsequent reloads stay quiet and the on-disk state matches what
+    # production would produce — only the network call is skipped.
     if dry_run:
         logger.info(
             "[DRY-RUN] %s would send bio update: %r",
             identity.log_label, current,
         )
-        return False
-    logger.info("%s sending bio update", identity.log_label)
-    client.set_bio(
-        current["nickname"],
-        current["status"],
-        current["selfie"],
-        current["avatar"],
-    )
+    else:
+        logger.info("%s sending bio update", identity.log_label)
+        client.set_bio(
+            current["nickname"],
+            current["status"],
+            current["selfie"],
+            current["avatar"],
+        )
+
     try:
         _save_last_bio(identity_dir, current)
     except OSError as exc:
-        # Bio was sent successfully; cache write failure means next start
-        # will redundantly resend. Annoying but not broken — flag it.
+        # Cache write failure means the next start will redundantly resend
+        # (or re-log under dry-run). Annoying but not broken — flag it.
         logger.warning(
-            "%s bio sent but writing %s failed: %s — will re-send next start",
-            identity.log_label, LAST_BIO_FILENAME, exc,
+            "%s bio %s but writing %s failed: %s — will re-fire next start",
+            identity.log_label,
+            "would-send recorded" if dry_run else "sent",
+            LAST_BIO_FILENAME, exc,
         )
-    return True
+    return not dry_run
 
 
 def _current_bio_dict(identity: IdentityConfig) -> dict[str, str]:

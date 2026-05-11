@@ -326,15 +326,21 @@ def test_set_bio_failure_leaves_cache_unchanged(tmp_path):
     assert not (tmp_path / LAST_BIO_FILENAME).exists()
 
 
-def test_dry_run_logs_would_send_and_does_not_call_set_bio(tmp_path, caplog):
-    """Dry-run with no cache → log line, no network call, no cache write."""
+def test_dry_run_logs_writes_cache_but_skips_set_bio(tmp_path, caplog):
+    """Dry-run: still writes `last_bio.json` (faithful preview of prod state),
+    just skips the actual `client.set_bio` network call."""
     identity = _identity_with_selfie()
     client = _FakeClient(client_id="x")
     with caplog.at_level(logging.INFO, logger="news_agent.hashiverse_setup"):
         sent = update_bio_if_changed(client, identity, tmp_path, dry_run=True)
-    assert sent is False
+    assert sent is False  # no network call fired
     assert client.set_bio_calls == []
-    assert not (tmp_path / LAST_BIO_FILENAME).exists()
+    # The cache file IS written — same state production would produce.
+    assert (tmp_path / LAST_BIO_FILENAME).exists()
+    on_disk = json.loads(
+        (tmp_path / LAST_BIO_FILENAME).read_text(encoding="utf-8")
+    )
+    assert on_disk == _expected_bio_dict_from(identity)
     matching = [
         r.getMessage() for r in caplog.records
         if "would send bio update" in r.getMessage()
@@ -343,9 +349,9 @@ def test_dry_run_logs_would_send_and_does_not_call_set_bio(tmp_path, caplog):
     assert "[DRY-RUN]" in matching[0]
 
 
-def test_dry_run_does_not_update_cache_even_when_bio_differs(tmp_path):
-    """Dry-run must NOT update the cache — otherwise a subsequent production
-    run would skip the (real) update because the cache looked current."""
+def test_dry_run_updates_cache_when_bio_differs(tmp_path):
+    """Dry-run must update the cache so the next reload sees a match and
+    stays silent — matching the production steady state."""
     identity = _identity_with_selfie()
     old_bio = _expected_bio_dict_from(identity) | {"status": "stale status"}
     (tmp_path / LAST_BIO_FILENAME).write_text(json.dumps(old_bio), encoding="utf-8")
@@ -353,7 +359,8 @@ def test_dry_run_does_not_update_cache_even_when_bio_differs(tmp_path):
     update_bio_if_changed(client, identity, tmp_path, dry_run=True)
     assert client.set_bio_calls == []
     on_disk = json.loads((tmp_path / LAST_BIO_FILENAME).read_text(encoding="utf-8"))
-    assert on_disk["status"] == "stale status"  # untouched
+    # Cache now holds the NEW bio — same as a real prod run would have.
+    assert on_disk == _expected_bio_dict_from(identity)
 
 
 def test_dry_run_with_unchanged_bio_is_silent(tmp_path, caplog):
@@ -370,6 +377,28 @@ def test_dry_run_with_unchanged_bio_is_silent(tmp_path, caplog):
     assert not any(
         "would send bio update" in r.getMessage() for r in caplog.records
     )
+
+
+def test_dry_run_second_call_is_silent_after_first(tmp_path, caplog):
+    """Regression-guard for the operator pain that triggered this change:
+    first dry-run call logs `[DRY-RUN] … would send bio update`, second call
+    (simulating a reload) is silent because the first call wrote the cache.
+    Without the cache write, every reload re-fires the line for every
+    identity — exactly what we want to avoid."""
+    identity = _identity_with_selfie()
+    client = _FakeClient(client_id="x")
+    with caplog.at_level(logging.INFO, logger="news_agent.hashiverse_setup"):
+        update_bio_if_changed(client, identity, tmp_path, dry_run=True)
+        # Second call simulates a reload — should be silent.
+        update_bio_if_changed(client, identity, tmp_path, dry_run=True)
+    matching = [
+        r.getMessage() for r in caplog.records
+        if "would send bio update" in r.getMessage()
+    ]
+    assert len(matching) == 1, (
+        f"expected exactly one [DRY-RUN] line across two calls, got {matching}"
+    )
+    assert client.set_bio_calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -394,6 +423,8 @@ def test_client_startup_invokes_bio_sync_in_production(tmp_path):
 
 
 def test_client_startup_in_dry_run_does_not_send_bio(tmp_path):
+    """Dry-run skips the actual `set_bio` network call but still writes
+    `last_bio.json` so the on-disk state matches production."""
     identity = _identity_with_selfie()
     factory_class = _fake_class(CLIENT_ID)
     client = start_hashiverse_client_for_identity(
@@ -405,7 +436,8 @@ def test_client_startup_in_dry_run_does_not_send_bio(tmp_path):
         dry_run=True,
     )
     assert factory_class._factory.client.set_bio_calls == []
-    assert not (tmp_path / LAST_BIO_FILENAME).exists()
+    # Cache file IS written even in dry-run — faithful preview of prod state.
+    assert (tmp_path / LAST_BIO_FILENAME).exists()
     # Client still constructed and returned.
     assert client.client_id == CLIENT_ID
 
