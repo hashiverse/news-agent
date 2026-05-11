@@ -400,6 +400,36 @@ def run(
             logger.info("test mode: removed ephemeral home %s", ephemeral_home)
 
 
+@main.command(name="test-hashiverse")
+@click.option(
+    "--verbose-hashiverse",
+    "verbose_hashiverse",
+    is_flag=True,
+    help="Bridge log output from the Rust hashiverse-client into Python's logging.",
+)
+def test_hashiverse(verbose_hashiverse: bool) -> None:
+    """One-shot connectivity smoke test against the production hashiverse network.
+
+    Builds a throwaway random identity (cheap argon2, tempdir data dir),
+    fetches OG metadata from a fixed real URL, submits a single URL-preview
+    post with the ``#test`` hashtag, then exits. No control file, no
+    ``NEWS_AGENT_GLOBAL_SALT``, no identities required.
+    """
+    _configure_logging(verbose_hashiverse=verbose_hashiverse)
+    # Local import keeps the daemon's startup path free of the smoke module
+    # unless this subcommand is the one being invoked.
+    from news_agent.hashiverse_smoke import run_hashiverse_smoke_test
+
+    try:
+        posted_url = run_hashiverse_smoke_test()
+    except Exception:  # noqa: BLE001 — surface every failure as a clean exit code
+        logger.exception("hashiverse smoke test failed")
+        sys.exit(1)
+    logger.info(
+        "[OK] hashiverse smoke test complete - posted %s with #test", posted_url
+    )
+
+
 def _safe_rmtree(path: Path) -> None:
     """Remove a directory tree, ignoring errors. Suitable for atexit."""
     shutil.rmtree(path, ignore_errors=True)

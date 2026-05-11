@@ -109,6 +109,7 @@ news-agent/
 
 ```
 news-agent run [OPTIONS]
+news-agent test-hashiverse [--verbose-hashiverse]
 ```
 
 | Flag | Type | Purpose |
@@ -122,6 +123,8 @@ news-agent run [OPTIONS]
 | `--verbose-filtering` | flag | Log every article rejected by the keyword filter at INFO level. Off by default — useful when tuning `keywords_required` / `keywords_optional`; each rejection logs the missing keywords and the haystack the picker compared against. |
 
 The required env var is `NEWS_AGENT_GLOBAL_SALT`. Missing → daemon refuses to start. Below 32 chars → friendly-cranky warning at startup, daemon continues running.
+
+**`news-agent test-hashiverse`** is a one-shot connectivity smoke test. Builds an ephemeral throwaway identity (random salt, tempdir data dir, cheap argon2), fetches OG metadata for a fixed real URL, submits a single URL-preview post tagged `#test` to the production hashiverse network, and exits. No control file, no `NEWS_AGENT_GLOBAL_SALT`, no operator configuration required — useful for verifying the network plumbing works end-to-end without touching any real daemon state.
 
 ---
 

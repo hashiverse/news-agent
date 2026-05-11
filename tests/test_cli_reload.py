@@ -705,3 +705,63 @@ def test_color_formatter_levelname_padding_preserved():
     # INFO is 4 chars → 3 trailing spaces inside the level span.
     # With color disabled at INFO, the brackets bracket the padded levelname.
     assert "[INFO   ]" in out_info
+
+
+# ---------------------------------------------------------------------------
+# `test-hashiverse` subcommand: one-shot connectivity smoke test that bypasses
+# the daemon, control file, and identity machinery entirely.
+
+
+def test_test_hashiverse_subcommand_calls_smoke_runner(monkeypatch, caplog):
+    """Invoking `news-agent test-hashiverse` calls run_hashiverse_smoke_test
+    exactly once and reports the posted URL in the success log line."""
+    from news_agent import hashiverse_smoke
+
+    invocations: list[None] = []
+
+    def _stub_runner(**_kwargs) -> str:
+        invocations.append(None)
+        return "https://www.techradar.com/pro/digital-sovereignty-stub"
+
+    monkeypatch.setattr(
+        hashiverse_smoke, "run_hashiverse_smoke_test", _stub_runner
+    )
+
+    with caplog.at_level(logging.INFO, logger="news_agent"):
+        result = CliRunner().invoke(cli.main, ["test-hashiverse"])
+
+    assert result.exit_code == 0, result.output
+    assert len(invocations) == 1
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(
+        "hashiverse smoke test complete" in m
+        and "https://www.techradar.com/pro/digital-sovereignty-stub" in m
+        for m in messages
+    ), f"success log line missing; got {messages}"
+
+
+def test_test_hashiverse_subcommand_exits_nonzero_on_failure(monkeypatch, caplog):
+    """If the smoke runner raises, the CLI exits with a non-zero code and logs
+    the exception — the operator sees the failure rather than a silent 0 exit."""
+    from news_agent import hashiverse_smoke
+
+    def _raising_runner(**_kwargs) -> str:
+        raise RuntimeError("DNSSEC bootstrap failed")
+
+    monkeypatch.setattr(
+        hashiverse_smoke, "run_hashiverse_smoke_test", _raising_runner
+    )
+
+    with caplog.at_level(logging.ERROR, logger="news_agent"):
+        result = CliRunner().invoke(cli.main, ["test-hashiverse"])
+
+    assert result.exit_code == 1
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("smoke test failed" in m for m in messages), messages
+    # The RuntimeError text should be visible somewhere in the captured records
+    # (either the message itself or the formatted traceback via exc_info).
+    formatted = "\n".join(
+        r.getMessage() + "\n" + (logging.Formatter().formatException(r.exc_info) if r.exc_info else "")
+        for r in caplog.records
+    )
+    assert "DNSSEC bootstrap failed" in formatted
