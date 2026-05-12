@@ -1,7 +1,7 @@
 """Keyphrase derivation: blake3 mix of (global_salt, local_salt) → argon2id → keyphrase string.
 
 The argon2id output is what's handed to ``HashiverseClient.create_from_keyphrase``.
-Production parameters are deliberately aggressive (1 GiB memory, 4 iterations) so
+Production parameters are deliberately aggressive (128 MiB memory, 8 iterations) so
 that a leak of one identity's derived keyphrase plus the control file does not
 cheaply yield ``NEWS_AGENT_GLOBAL_SALT``. This is run at most once per identity
 over the daemon's lifetime — the resulting public key is then cached on disk and
@@ -16,13 +16,13 @@ import blake3
 from argon2.low_level import Type, hash_secret_raw
 
 # Production parameters — locked in by Block 1.
-ARGON2_MEMORY_KIB = 1024 * 1024  # 1 GiB
-ARGON2_TIME_COST = 4
+ARGON2_MEMORY_KIB = 128 * 1024  # 128 MiB — fits on a 512 MB VPS with overhead
+ARGON2_TIME_COST = 8
 ARGON2_PARALLELISM = 1
 ARGON2_OUTPUT_BYTES = 64
 
 # Test-mode parameters — used by the daemon when invoked with `--test`. Paid
-# at most once per identity per ephemeral home, so cutting cost from ~5 s to
+# at most once per identity per ephemeral home, so cutting cost from ~1-2 s to
 # ~50 ms makes smoke runs usable. NOT safe for production: a leaked cheap
 # keyphrase plus the control file would yield NEWS_AGENT_GLOBAL_SALT cheaply.
 TEST_MODE_ARGON2_MEMORY_KIB = 8 * 1024  # 8 MiB

@@ -28,8 +28,8 @@ FAST_KWARGS = dict(
 
 def test_production_parameters_are_locked_in():
     """The locked-in defaults shouldn't drift without an explicit decision."""
-    assert ARGON2_MEMORY_KIB == 1024 * 1024  # 1 GiB
-    assert ARGON2_TIME_COST == 4
+    assert ARGON2_MEMORY_KIB == 128 * 1024  # 128 MiB
+    assert ARGON2_TIME_COST == 8
     assert ARGON2_PARALLELISM == 1
     assert ARGON2_OUTPUT_BYTES == 64
 

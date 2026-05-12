@@ -236,7 +236,7 @@ For each identity:
 
 ```
 keyphrase = argon2id(blake3(global_salt, local_salt),
-                     m=1 GiB, t=4, p=1, output=64 bytes)
+                     m=128 MiB, t=8, p=1, output=64 bytes)
 hashiverse_client = HashiverseClient.create_from_keyphrase(keyphrase, ...)
 ```
 

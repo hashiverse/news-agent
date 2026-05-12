@@ -236,7 +236,7 @@ def run(
     ephemeral_home: Path | None = None
 
     # --test runs cheap argon2 (~50 ms/identity) instead of production
-    # parameters (~5 s/identity). The cheap params are safe here because
+    # parameters (~1-2 s/identity). The cheap params are safe here because
     # --test implies an ephemeral home dir and dry-run mode (the mutex
     # check above ruled out --production).
     derive_fn: Callable[[str, str], str] = (
