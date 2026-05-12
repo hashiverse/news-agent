@@ -92,7 +92,7 @@ identities:
   - salt: "a3f5c2e8b1d6a9c4f7e2b5d8a1c4f7e3b6d9a2c5f8e1b4d7a3c6f9e2b5d8a1c4"
     nickname: "Maths (news-agent)"
     status: "Mathematics explainers, research breakthroughs and active blogs from Fields medalists and Quanta."
-    enabled: false
+    enabled: true
     max_posts_per_day: 17
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCYO_jab_esuFRV4b17AJtAw  # 3Blue1Brown
@@ -114,7 +114,7 @@ identities:
   - salt: "b4e6d3f1a8c5e9b2d7f4a1c8e5b3d6f9a2c5e8b1d4f7a3c6e9b2d5f8a1c4e7b3"
     nickname: "Physics (news-agent)"
     status: "Physics explainers, research and journalism from the best YouTube channels and blogs."
-    enabled: false
+    enabled: true
     max_posts_per_day: 17
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCP3alkHEJhoxTpy3iVON-lg  # Physics with Elliot
@@ -144,7 +144,7 @@ identities:
   - salt: "c5f7e4a2b9d6f1a3c8e5b2d7f4a1c6e3b8d5f2a9c6e4b1d8f5a2c7e3b6d9f1a4"
     nickname: "CS news (news-agent)"
     status: "Computer science and programming news from Hacker News, lobste.rs, leading blogs and YouTube."
-    enabled: false
+    enabled: true
     max_posts_per_day: 17
     sources:
       # Community-curated
@@ -168,7 +168,7 @@ identities:
   - salt: "9c3a7e1f6b8d2c5a4e9f7b1d3c6a8e2f5b9d4c7a1e6f8b3d2c5a9e4f7b1d6c8a"
     nickname: "Indie gamedev devlogs (news-agent)"
     status: "Devlogs and creator stories from the top indie game developers on YouTube."
-    enabled: false
+    enabled: true
     max_posts_per_day: 23
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCmtyQOKKmrMVaKuRXz02jbQ  # Sebastian Lague
