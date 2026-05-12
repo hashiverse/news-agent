@@ -2,7 +2,14 @@
 
 A standalone, open-source, **forkable** Python daemon that mirrors RSS feeds into hashiverse. One process hosts **multiple hashiverse identities**; each identity has its own keys and its own `sources:` list of RSS feeds; the daemon paces posts per identity and dedupes across the whole daemon.
 
+The point of this project is to help overcome the cold-start problem of a new social media platform.  
+While nobody wants a social media  platform dominated by bots, we also need to kick start small communities,
+hopefully by providing content interesting to them against which they can have discussions.
+
 The daemon is generic — anyone can fork news-agent and point it at their own control YAML for their own domain. It depends on a sibling Rust+Python project (`hashiverse-client`) for the actual hashiverse network operations.
+
+
+
 
 ---
 

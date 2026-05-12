@@ -16,7 +16,7 @@ identities:
     nickname: "Tesla FSD & Robotaxi news (news-agent)"
     status: "News about the progress of Tesla's FSD and robotaxi businesses."
     enabled: true
-    max_posts_per_day: 24
+    max_posts_per_day: 23
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC4DBLlq1x0AKmip1QJUcbXg  # Brighter with Herbert
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCgbyN_o-Guwpyqfuuz3pyIw  # Farzad
@@ -47,8 +47,8 @@ identities:
   - salt: "c7e3f1a2b8d4e6f9a3c7b1d5e2f8a4c6b9d3e7f1a5c8b2d6e4f9a1c3b7d5e2f8"
     nickname: "Linux YouTube (news-agent)"
     status: "Curated Linux content from the top YouTube channels."
-    enabled: true
-    max_posts_per_day: 24
+    enabled: false
+    max_posts_per_day: 19
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCxQKHvKbmSzGMvUrVtJYnUA  # Learn Linux TV
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCVls1GmFKf6WlTraIb_IaJg  # DistroTube
@@ -69,8 +69,8 @@ identities:
   - salt: "5b9d3e7f2a8c1b4e6d5a9f3c8b2e7d4a1f6c9b5e8d2a7f4c1b6e9d3a8f5c2b7e"
     nickname: "Rust on YouTube (news-agent)"
     status: "Curated Rust programming content from the top YouTube channels."
-    enabled: true
-    max_posts_per_day: 24
+    enabled: false
+    max_posts_per_day: 31
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCaYhcUwRBNscFNUKTjgPFiA  # Rust Programming Language (official)
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC_iD0xppBwwsrM9DegC5cQQ  # Jon Gjengset (Crust of Rust)
@@ -89,19 +89,34 @@ identities:
     keywords_required: ["rust"]
     keywords_optional: []
 
-  - salt: "e4a8f2c1b6d3e9f7a2c5b8d1e6f4a3c7b9d2e5f8a1c4b7d6e3f9a8c2b5d4e1f7"
-    nickname: "Geekout: maths, physics, CS (news-agent)"
-    status: "Popular science, maths and computer science from the best explainer channels on YouTube."
-    enabled: true
-    max_posts_per_day: 24
+  - salt: "a3f5c2e8b1d6a9c4f7e2b5d8a1c4f7e3b6d9a2c5f8e1b4d7a3c6f9e2b5d8a1c4"
+    nickname: "Maths (news-agent)"
+    status: "Mathematics explainers, research breakthroughs and active blogs from Fields medalists and Quanta."
+    enabled: false
+    max_posts_per_day: 17
     sources:
-      # Maths
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCYO_jab_esuFRV4b17AJtAw  # 3Blue1Brown
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCoxcjq-8xIDTYp3uz647V5A  # Numberphile
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC1_uAIS3r8Vu6JjXWvastJg  # Mathologer
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCSju5G2aFaWMqn-_0YBtq5A  # Stand-up Maths (Matt Parker)
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC52kszkc08-acFOuogFl5jw  # Tibees
-      # Physics
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCTpmmkp1E4nmZqWPS-dl5bg  # Quanta Science Channel
+      # Mathematician blogs
+      - https://terrytao.wordpress.com/feed/                                            # Terence Tao
+      - https://gowers.wordpress.com/feed/                                              # Tim Gowers
+      - https://golem.ph.utexas.edu/category/atom10.xml                                 # n-Category Café
+      # Journalism
+      - https://www.quantamagazine.org/mathematics/feed/                                # Quanta — Mathematics
+    hashtags: ["maths", "science"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "b4e6d3f1a8c5e9b2d7f4a1c8e5b3d6f9a2c5e8b1d4f7a3c6e9b2d5f8a1c4e7b3"
+    nickname: "Physics (news-agent)"
+    status: "Physics explainers, research and journalism from the best YouTube channels and blogs."
+    enabled: false
+    max_posts_per_day: 17
+    sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCP3alkHEJhoxTpy3iVON-lg  # Physics with Elliot
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCHnyfMqiRRG1u-2MsSQLbXA  # Veritasium
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCUHW94eEFW7hkUMVaZz4eDg  # minutephysics
@@ -114,21 +129,47 @@ identities:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC1VLQPn9cYSqx8plbk9RxxQ  # The Action Lab
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCFk__1iexL3T5gvGcMpeHNA  # Looking Glass Universe
       - https://www.youtube.com/feeds/videos.xml?channel_id=UConVfxXodg78Tzh5nNu85Ew  # Welch Labs
-      # Computer science
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCRhV1rWIpm_pU19bBm_2RXw  # Sean Carroll
+      - https://what-if.xkcd.com/feed.atom                                              # What If? (Randall Munroe)
+      - https://www.smbc-comics.com/comic/rss                                           # SMBC (Zach Weinersmith)
+      # Physics blogs and journalism
+      - https://physicsworld.com/feed/                                                  # Physics World (daily news)
+      - https://www.math.columbia.edu/~woit/wordpress/?feed=rss2                        # Peter Woit — Not Even Wrong
+      - https://4gravitons.com/feed/                                                    # 4gravitons (Matt von Hippel)
+      - https://www.quantamagazine.org/physics/feed/                                    # Quanta — Physics
+    hashtags: ["physics", "science"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "c5f7e4a2b9d6f1a3c8e5b2d7f4a1c6e3b8d5f2a9c6e4b1d8f5a2c7e3b6d9f1a4"
+    nickname: "CS news (news-agent)"
+    status: "Computer science and programming news from Hacker News, lobste.rs, leading blogs and YouTube."
+    enabled: false
+    max_posts_per_day: 17
+    sources:
+      # Community-curated
+      - https://hnrss.org/best                                      # Hacker News (best stories — high signal)
+      - https://lobste.rs/rss                                       # lobste.rs (tighter-curated CS community)
+      # Programmer blogs
+      - https://jvns.ca/atom.xml                                    # Julia Evans
+      - https://martinfowler.com/feed.atom                          # Martin Fowler (architecture / design)
+      - https://stackoverflow.blog/feed/                            # Stack Overflow Engineering
+      - https://research.swtch.com/feed.atom                        # Russ Cox (research.swtch.com)
+      - https://eli.thegreenplace.net/feeds/all.atom.xml            # Eli Bendersky (systems / PL)
+      # YouTube
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC9-y-6csu5WGm29I7JiwpnA  # Computerphile
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCbfYPyITQ-7l4upoX8nvctg  # Two Minute Papers
-      # Big science
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UCTpmmkp1E4nmZqWPS-dl5bg  # Quanta Science Channel
-      - https://www.youtube.com/feeds/videos.xml?channel_id=UCRhV1rWIpm_pU19bBm_2RXw  # Sean Carroll
-    hashtags: ["science"]
+      # Comics
+      - https://xkcd.com/rss.xml                                    # xkcd
+    hashtags: ["compsci", "science"]
     keywords_required: []
     keywords_optional: []
 
   - salt: "9c3a7e1f6b8d2c5a4e9f7b1d3c6a8e2f5b9d4c7a1e6f8b3d2c5a9e4f7b1d6c8a"
     nickname: "Indie gamedev devlogs (news-agent)"
     status: "Devlogs and creator stories from the top indie game developers on YouTube."
-    enabled: true
-    max_posts_per_day: 24
+    enabled: false
+    max_posts_per_day: 23
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCmtyQOKKmrMVaKuRXz02jbQ  # Sebastian Lague
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCMnULQ6F6kLDAHxofDWIbrw  # Pirate Software
@@ -141,6 +182,230 @@ identities:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCaoqVlqPTH78_xjTjTOMcmQ  # Miziziziz
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCQG40havu4kNpB4pxUDQhYQ  # Acerola
     hashtags: ["gamedev"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "3f8a2c6e1b9d4f7a5c8e2b6d3f1a9c4e7b2d5f8a6c3e1b9d4f7a2c5e8b6d3f1a"
+    nickname: "Crypto news (news-agent)"
+    status: "Top crypto news from dedicated outlets, mainstream press, blogs and YouTube."
+    enabled: false
+    max_posts_per_day: 27
+    sources:
+      # Crypto-first news outlets
+      - https://www.coindesk.com/arc/outboundfeeds/rss/         # CoinDesk
+      - https://cointelegraph.com/rss                           # Cointelegraph
+      - https://www.theblock.co/rss.xml                         # The Block
+      - https://decrypt.co/feed                                 # Decrypt
+      - https://bitcoinmagazine.com/feed                        # Bitcoin Magazine
+      - https://feeds.feedburner.com/CryptoSlate                # CryptoSlate (feedburner mirror)
+      - https://protos.com/feed/                                # Protos
+      - https://www.dlnews.com/arc/outboundfeeds/rss/           # DL News
+      - https://thedefiant.io/feed                              # The Defiant
+      - https://www.bankless.com/feed                           # Bankless
+      # Mainstream press, crypto-tagged
+      - https://techcrunch.com/category/cryptocurrency/feed/    # TechCrunch — crypto
+      - https://www.ft.com/cryptocurrencies?format=rss          # FT — crypto
+      # Blogs
+      - https://vitalik.eth.limo/feed.xml                       # Vitalik Buterin
+      - https://blog.ethereum.org/en/feed.xml                   # Ethereum Foundation blog
+      # YouTube
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCqK_GSMbpiV8spgD3ZGloSw  # Coin Bureau
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCJWCJCWOxBYSi5DhCieLOLQ  # Andreas Antonopoulos
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCL0J4MLEdLP0-UyLu0hCktg  # The Defiant
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCAl9Ld79qaZxp9JzEOwd3aA  # Bankless
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCGXWKlq1Oxr3ddEtmKhAkPg  # Real Vision Finance
+    hashtags: ["crypto"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "7c2d4f9a8e1b3d6c5a9f2e7b4d1c8a3f6e9b2d5c7a4f1e8b3d6c9a2f5e7b4d1c"
+    nickname: "Bitcoin news (news-agent)"
+    status: "Bitcoin-only news from dedicated outlets, mainstream press, blogs and YouTube."
+    enabled: false
+    max_posts_per_day: 25
+    sources:
+      # Crypto-first news outlets
+      - https://www.coindesk.com/arc/outboundfeeds/rss/         # CoinDesk
+      - https://cointelegraph.com/rss                           # Cointelegraph
+      - https://www.theblock.co/rss.xml                         # The Block
+      - https://decrypt.co/feed                                 # Decrypt
+      - https://bitcoinmagazine.com/feed                        # Bitcoin Magazine
+      - https://feeds.feedburner.com/CryptoSlate                # CryptoSlate (feedburner mirror)
+      - https://protos.com/feed/                                # Protos
+      - https://www.dlnews.com/arc/outboundfeeds/rss/           # DL News
+      - https://thedefiant.io/feed                              # The Defiant
+      - https://www.bankless.com/feed                           # Bankless
+      # Mainstream press, crypto-tagged
+      - https://techcrunch.com/category/cryptocurrency/feed/    # TechCrunch — crypto
+      - https://www.ft.com/cryptocurrencies?format=rss          # FT — crypto
+      # Blogs
+      - https://vitalik.eth.limo/feed.xml                       # Vitalik Buterin
+      - https://blog.ethereum.org/en/feed.xml                   # Ethereum Foundation blog
+      # YouTube
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCqK_GSMbpiV8spgD3ZGloSw  # Coin Bureau
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCJWCJCWOxBYSi5DhCieLOLQ  # Andreas Antonopoulos
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCL0J4MLEdLP0-UyLu0hCktg  # The Defiant
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCAl9Ld79qaZxp9JzEOwd3aA  # Bankless
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCGXWKlq1Oxr3ddEtmKhAkPg  # Real Vision Finance
+    hashtags: ["bitcoin", "crypto"]
+    keywords_required: ["bitcoin"]
+    keywords_optional: []
+
+  - salt: "1d6f3a8c5e2b9d4f7a1c8e3b6d2f9a5c7e4b1d8f3a6c9e2b5d7f4a1c8e3b6d2f"
+    nickname: "Ethereum news (news-agent)"
+    status: "Ethereum-only news from dedicated outlets, mainstream press, blogs and YouTube."
+    enabled: false
+    max_posts_per_day: 23
+    sources:
+      # Crypto-first news outlets
+      - https://www.coindesk.com/arc/outboundfeeds/rss/         # CoinDesk
+      - https://cointelegraph.com/rss                           # Cointelegraph
+      - https://www.theblock.co/rss.xml                         # The Block
+      - https://decrypt.co/feed                                 # Decrypt
+      - https://bitcoinmagazine.com/feed                        # Bitcoin Magazine
+      - https://feeds.feedburner.com/CryptoSlate                # CryptoSlate (feedburner mirror)
+      - https://protos.com/feed/                                # Protos
+      - https://www.dlnews.com/arc/outboundfeeds/rss/           # DL News
+      - https://thedefiant.io/feed                              # The Defiant
+      - https://www.bankless.com/feed                           # Bankless
+      # Mainstream press, crypto-tagged
+      - https://techcrunch.com/category/cryptocurrency/feed/    # TechCrunch — crypto
+      - https://www.ft.com/cryptocurrencies?format=rss          # FT — crypto
+      # Blogs
+      - https://vitalik.eth.limo/feed.xml                       # Vitalik Buterin
+      - https://blog.ethereum.org/en/feed.xml                   # Ethereum Foundation blog
+      # YouTube
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCqK_GSMbpiV8spgD3ZGloSw  # Coin Bureau
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCJWCJCWOxBYSi5DhCieLOLQ  # Andreas Antonopoulos
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCL0J4MLEdLP0-UyLu0hCktg  # The Defiant
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCAl9Ld79qaZxp9JzEOwd3aA  # Bankless
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCGXWKlq1Oxr3ddEtmKhAkPg  # Real Vision Finance
+    hashtags: ["ethereum", "crypto"]
+    keywords_required: ["ethereum"]
+    keywords_optional: []
+
+  - salt: "e8b3a1c5f6d2e9b4a7c8f1d3e5b2c6a9f4d8e1b3c5a7f2d6e9b8c4a1f3d5e7b2"
+    nickname: "Cryptography (news-agent)"
+    status: "Cryptography research, breakthroughs and analysis — the maths and the science, not the currencies."
+    enabled: false
+    max_posts_per_day: 23
+    sources:
+      # Cryptographer blogs
+      - https://www.schneier.com/feed/                              # Schneier on Security (Bruce Schneier)
+      - https://blog.cryptographyengineering.com/feed/              # A Few Thoughts on Cryptographic Engineering (Matthew Green)
+      - https://www.cryptologie.net/rss/                            # cryptologie.net (David Wong)
+      # Security-research labs (high crypto signal)
+      - https://blog.trailofbits.com/feed/                          # Trail of Bits
+      - https://research.nccgroup.com/feed/                         # NCC Group research
+      - https://blog.quarkslab.com/feeds/all.atom.xml               # Quarkslab
+      - https://blog.cloudflare.com/tag/cryptography/rss/           # Cloudflare — cryptography tag
+      - https://blog.cloudflare.com/tag/post-quantum/rss/           # Cloudflare — post-quantum tag
+      - https://googleprojectzero.blogspot.com/feeds/posts/default  # Google Project Zero
+      - https://signal.org/blog/rss.xml                             # Signal (E2E protocol development)
+      # YouTube — conferences and educators
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCV-WittrGkRyONzX6UmCaiA  # IACR (Crypto/Eurocrypt/Asiacrypt talks)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCQiIRDBmp3pfTdRJ99EeDEw  # Real World Crypto
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC8_FqvQWJfZYxcSoEJ5ob-Q  # Cryptography for Everybody
+    hashtags: ["cryptography"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "d6f8e3a1c5b9f4d2e7a8c1b6f3d5e9a4c2b7f8d1e3a6c9b5f2d4e7a1c8b3f6d9"
+    nickname: "US left politics (news-agent)"
+    status: "Left-leaning US political commentary and journalism."
+    enabled: false
+    max_posts_per_day: 24
+    sources:
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCKRoXz3hHAu2XL_k3Ef4vJQ  # Pod Save America (Crooked Media)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCqQ5aCZZIlyu-exKE5TCfJw  # The Majority Report (Sam Seder)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCsVi25eNeCERSMdEv3Js49Q  # David Pakman Show
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC1yBKRuGpC1tSM73A0ZjYjQ  # The Young Turks
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCzuqE7-t13O4NIDYJfakrhw  # Democracy Now!
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCzGUT9PjV3SMBwjWXUYh4HA  # Jacobin
+      - https://www.theintercept.com/feed/?lang=en                                    # The Intercept
+    hashtags: ["uspolitics","politics"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "e7a9f4d2b6c1e8a3f5d7c9b2e4a6f8d1c3b5e7a9f2d4c6b8e1a3f5d7c9b2e4a6"
+    nickname: "US centre politics (news-agent)"
+    status: "Centrist and heterodox US political commentary and journalism."
+    enabled: false
+    max_posts_per_day: 24
+    sources:
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCO17ydwxqZbmyJ5_-hLlbOg  # Ezra Klein
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCNAxrHudMfdzNi6NxruKPLw  # Sam Harris (Making Sense)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCT3hHRk4xcfi15w_orXYvTA  # The Bulwark
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC6ZFN9Tx6xh-skXCuRHCDpQ  # PBS NewsHour
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCSRRURbKlPf1HwPUhjmufTg  # The Free Press
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCzQUP1qoWDoEbmsQxvdjxgQ  # Joe Rogan
+      - https://www.theatlantic.com/feed/all/                                         # The Atlantic
+      - https://www.persuasion.community/feed                                         # Persuasion (Yascha Mounk)
+    hashtags: ["uspolitics","politics"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "f8b1c3e5a7d9f2b4c6e8a1d3f5b7c9e2a4d6f8b1c3e5a7d9f2b4c6e8a1d3f5b7"
+    nickname: "US right politics (news-agent)"
+    status: "Right-leaning US political commentary and journalism."
+    enabled: false
+    max_posts_per_day: 24
+    sources:
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCaeO5vkdj5xOQHp4UmIN6dw  # The Daily Wire
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCnQC_G5Xsjhp9fEJKuIcrSw  # Ben Shapiro
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCL_f53ZEJxp8TtlOkHwMV9Q  # Jordan B Peterson
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCFA5MwxpxF_TqznK10xMikA  # The Tucker Carlson Show
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCvqtzdcURSqNjY9RQEK4XmQ  # Glenn Beck
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCzJXNzqz6VMHSNInQt_7q6w  # Megyn Kelly
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCLwNTXWEjVd2qIHLcXxQWxA  # Timcast (Tim Pool)
+      - https://www.nationalreview.com/feed/                                          # National Review
+      - https://www.reason.com/latest/feed/                                           # Reason
+    hashtags: ["uspolitics","politics"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "a2c4e6f8b1d3a5c7e9b2d4f6a8c1e3b5d7f9a2c4e6b8d1f3a5c7e9b2d4f6a8c1"
+    nickname: "UK left politics (news-agent)"
+    status: "Left-leaning UK political commentary and journalism."
+    enabled: false
+    max_posts_per_day: 24
+    sources:
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCOzMAa6IhV6uwYQATYG_2kg  # Novara Media
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCSYCo8uRGF39qDCxF870K5Q  # Owen Jones Talks
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCPgJddP_Y3BHo_8bG0G1TCA  # Yanis Varoufakis
+      - https://www.theguardian.com/uk/commentisfree/rss                              # The Guardian — Comment is Free
+      - https://www.newstatesman.com/feed/                                            # The New Statesman
+    hashtags: ["ukpolitics","politics"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "b3d5f7a9c2e4b6d8f1a3c5e7b9d2f4a6c8e1b3d5f7a9c2e4b6d8f1a3c5e7b9d2"
+    nickname: "UK centre politics (news-agent)"
+    status: "Centrist UK political commentary, podcasts and journalism."
+    enabled: false
+    max_posts_per_day: 24
+    sources:
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCsufaClk5if2RGqABb-09Uw  # The Rest is Politics (Campbell + Stewart)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCn7XHZiW6EUgSuxItybLLMg  # Vlad Vexler Chat
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCMxiv15iK_MFayY_3fU9loQ  # UnHerd
+      - https://www.economist.com/the-world-this-week/rss.xml                         # The Economist — world this week
+    hashtags: ["ukpolitics","politics"]
+    keywords_required: []
+    keywords_optional: []
+
+  - salt: "c4e6a8d2f5b7c9e1a3d5f7b9c2e4a6d8f1b3c5e7a9d2f4b6c8e1a3d5f7b9c2e4"
+    nickname: "UK right politics (news-agent)"
+    status: "Right-leaning UK political commentary and broadcast."
+    enabled: false
+    max_posts_per_day: 24
+    sources:
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC0vn8ISa4LKMunLbzaXLnOQ  # GB News
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCHtIJEocSjaIMZh8WcrVAeg  # The Spectator
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCm0yTweyAa0PwEIp0l3N_gA  # TalkTV
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCatt7TBjfBkiJWx8khav_Gg  # Piers Morgan Uncensored
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCzebnLCkmyVHkTQEoix3t8A  # Triggernometry (Konstantin Kisin)
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCuYHZz4-qdDSPNvuCfN4wMQ  # New Culture Forum
+    hashtags: ["ukpolitics","politics"]
     keywords_required: []
     keywords_optional: []
 
