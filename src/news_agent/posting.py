@@ -160,6 +160,37 @@ def post_or_dry_run(
         fields["description"],
         fields["image_url"],
     )
+
+    # Validity rule: the link is only worth posting if the preview itself
+    # supplied a title, description, AND image. Article-side fallbacks (RSS
+    # title/summary) deliberately do NOT rescue the rule — a link the page
+    # can't preview properly (typical of bot-detection / stripped pages) is
+    # treated as non-valid and skipped. The picker still dedupes against it
+    # via posts_db so the daemon won't re-fetch the same dud every cycle.
+    missing_preview_fields = [
+        name for name in ("title", "description", "image_url")
+        if not getattr(preview, name)
+    ]
+    if missing_preview_fields:
+        logger.warning(
+            "%s skipping post (preview missing %s): %s",
+            identity.log_label,
+            ", ".join(missing_preview_fields),
+            article.raw_url,
+        )
+        record_post(
+            conn,
+            posted_at_unix=now_unix,
+            identity_salt=identity.salt,
+            canonical_url=article.canonical_url,
+            source_url=article.source_url,
+            title=article.title,
+            item_guid=article.item_guid,
+            is_dry_run=dry_run,
+            is_skipped=True,
+        )
+        return
+
     html_body = format_post_html(article, preview, identity.hashtags)
 
     if dry_run:

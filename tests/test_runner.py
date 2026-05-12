@@ -58,13 +58,22 @@ class _FakeClient:
 
 @pytest.fixture(autouse=True)
 def stub_url_preview(monkeypatch):
-    """Replace posting.fetch_url_preview with a no-op for all runner tests.
+    """Replace posting.fetch_url_preview for all runner tests.
 
     The runner doesn't care about preview content — it just needs the post
     to be constructed and submitted. Without this, every real-run test would
-    hit the network trying to fetch the example.com URLs in test articles.
+    hit the network. We return a preview with all three required fields
+    populated so the post_or_dry_run skip rule doesn't fire; tests that need
+    to exercise the skip path can override this fixture with a partial
+    preview.
     """
-    monkeypatch.setattr(posting, "fetch_url_preview", lambda url: UrlPreviewData())
+    full_preview = UrlPreviewData(
+        url="https://example.com/canonical",
+        title="OG Title",
+        description="OG desc",
+        image_url="https://img.example/og.png",
+    )
+    monkeypatch.setattr(posting, "fetch_url_preview", lambda url: full_preview)
 
 
 class _NoJitterRandom(random.Random):
@@ -390,7 +399,11 @@ def test_real_run_calls_client_post(conn):
         thread.join(timeout=5)
 
     assert len(client.posted) == 1
-    assert "Real" in client.posted[0]
+    # The full-preview stub overrides article fields, so the card renders the
+    # preview's OG title rather than the RSS article title. We just need to
+    # confirm the post went out as a card body — the preview-vs-article-title
+    # fallback logic is exercised in test_posting.
+    assert '<div class="plugin-urlpreview-card">' in client.posted[0]
     posts = posts_in_last_24h_for_identity(conn, SALT_A, int(time.time()) + 60)
     assert posts[0].is_dry_run is False
 

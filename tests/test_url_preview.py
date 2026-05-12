@@ -12,12 +12,20 @@ import pytest
 
 from news_agent.url_preview import (
     MAX_BODY_BYTES,
+    USER_AGENT,
     UrlPreviewData,
     UrlPreviewError,
     _extract_url_preview,
     _fetch_html,
     fetch_url_preview,
 )
+
+
+def test_user_agent_is_facebookexternalhit():
+    """Many sites whitelist Facebook's link-preview crawler from bot-detection.
+    Locked in so it doesn't silently drift back to news-agent's honest UA,
+    which was getting served stripped pages by YouTube on datacenter IPs."""
+    assert USER_AGENT == "facebookexternalhit/1.1"
 
 
 # ---------------------------------------------------------------------------

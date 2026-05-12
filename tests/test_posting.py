@@ -79,6 +79,17 @@ def _patch_preview(monkeypatch, *, returns: UrlPreviewData | None = None, raises
     return captured_urls
 
 
+# A preview that passes the "all three preview fields populated" validity gate
+# in post_or_dry_run. Use this when the test cares about the post path itself,
+# not about how the gate behaves with partial previews.
+_FULL_PREVIEW = UrlPreviewData(
+    url="https://example.com/canonical",
+    title="OG Title",
+    description="OG desc",
+    image_url="https://img.example/og.png",
+)
+
+
 # ---------------------------------------------------------------------------
 # format_post_html
 
@@ -272,7 +283,7 @@ def test_format_post_html_hashtag_attribute_lowercased_span_preserves_case():
 
 def test_dry_run_does_not_call_client(conn, caplog, monkeypatch):
     client = _FakeClient()
-    captured = _patch_preview(monkeypatch)
+    captured = _patch_preview(monkeypatch, returns=_FULL_PREVIEW)
     with caplog.at_level(logging.INFO):
         post_or_dry_run(
             client=client,
@@ -352,9 +363,10 @@ def test_post_logs_resolved_fields_before_posting(conn, caplog, monkeypatch):
 
 
 def test_post_field_log_uses_fallbacks_when_preview_blank(conn, caplog, monkeypatch):
-    """When preview is empty, the log shows the same fallbacks format_post_html
-    will use to render — article.title, article.raw_url, stripped summary."""
-    _patch_preview(monkeypatch)  # returns UrlPreviewData() (all blanks)
+    """Even when the preview is empty and the skip rule will fire, the
+    "post fields:" log line MUST still emit with the resolved-after-fallback
+    values — operators rely on it for debugging why a skip happened."""
+    _patch_preview(monkeypatch)  # returns UrlPreviewData() (all blanks) → triggers skip
     with caplog.at_level(logging.INFO):
         post_or_dry_run(
             client=_FakeClient(),
@@ -371,10 +383,11 @@ def test_post_field_log_uses_fallbacks_when_preview_blank(conn, caplog, monkeypa
     assert "title='An article'" in line
     assert "description='summary'" in line
     assert "image_url=''" in line
+    # Skip warning also fires — covered separately by skip-rule tests below.
 
 
 def test_dry_run_records_history_with_dry_run_flag(conn, monkeypatch):
-    _patch_preview(monkeypatch)
+    _patch_preview(monkeypatch, returns=_FULL_PREVIEW)
     post_or_dry_run(
         client=_FakeClient(),
         article=_article(),
@@ -386,6 +399,7 @@ def test_dry_run_records_history_with_dry_run_flag(conn, monkeypatch):
     posts = posts_in_last_24h_for_identity(conn, SALT, 2_000_000)
     assert len(posts) == 1
     assert posts[0].is_dry_run is True
+    assert posts[0].is_skipped is False
     assert posts[0].canonical_url == "https://example.com/article"
     assert posts[0].source_url == "https://feed.example/rss"
     assert posts[0].title == "An article"
@@ -425,7 +439,7 @@ def test_real_run_calls_client_and_records_history(conn, monkeypatch):
 
 def test_real_run_appends_identity_hashtags_to_post_body(conn, monkeypatch):
     client = _FakeClient()
-    _patch_preview(monkeypatch)
+    _patch_preview(monkeypatch, returns=_FULL_PREVIEW)
     identity = IdentityConfig(
         salt=SALT,
         nickname="Test",
@@ -450,8 +464,10 @@ def test_real_run_appends_identity_hashtags_to_post_body(conn, monkeypatch):
     assert body.endswith("</hashtag>")
 
 
-def test_real_run_posts_anyway_when_preview_fetch_fails(conn, caplog, monkeypatch):
-    """Network/parsing failures during preview fetch must not block posting."""
+def test_real_run_skips_post_when_preview_fetch_fails(conn, caplog, monkeypatch):
+    """Preview fetch failure → blank UrlPreviewData → all three preview fields
+    missing → skip rule fires → post is NOT submitted. The article is recorded
+    with is_skipped=True so the picker dedupes against it."""
     client = _FakeClient()
     _patch_preview(monkeypatch, raises=RuntimeError("preview fetch down"))
     with caplog.at_level(logging.WARNING):
@@ -463,24 +479,23 @@ def test_real_run_posts_anyway_when_preview_fetch_fails(conn, caplog, monkeypatc
             dry_run=False,
             now_unix=2_000_000,
         )
-    assert len(client.posts) == 1
-    body = client.posts[0]
-    # Card still renders, with article.title as the fallback link text and the
-    # raw URL as href. No image-container (preview fetch failed → no image_url).
-    # The description div picks up the article.summary fallback.
-    assert '<div class="plugin-urlpreview-card">' in body
-    assert 'href="https://example.com/article?utm_source=x"' in body
-    assert ">An article</a>" in body
-    assert "plugin-urlpreview-card-image-container" not in body
+    assert client.posts == []
     assert any(
         "fetch_url_preview failed" in record.message for record in caplog.records
     )
+    assert any(
+        "skipping post (preview missing" in record.message for record in caplog.records
+    )
+    # Skipped row exists in the dedupe set but is NOT counted toward quota.
+    from news_agent.posts_db import posted_canonical_urls_in_last_24h
+    assert "https://example.com/article" in posted_canonical_urls_in_last_24h(conn, 2_000_000)
+    assert posts_in_last_24h_for_identity(conn, SALT, 2_000_000) == []
 
 
 def test_default_now_unix_is_close_to_real_clock(conn, monkeypatch):
     """When now_unix is omitted the function uses time.time() — verify roughly."""
     import time as time_module
-    _patch_preview(monkeypatch)
+    _patch_preview(monkeypatch, returns=_FULL_PREVIEW)
     before = int(time_module.time())
     post_or_dry_run(
         client=_FakeClient(),
@@ -492,3 +507,152 @@ def test_default_now_unix_is_close_to_real_clock(conn, monkeypatch):
     after = int(time_module.time())
     posts = posts_in_last_24h_for_identity(conn, SALT, after + 10)
     assert before <= posts[0].posted_at_unix <= after
+
+
+# ---------------------------------------------------------------------------
+# Skip-rule: strict "preview must have title + description + image" validity.
+# Article-side fallbacks (RSS title/summary) deliberately do NOT rescue the rule.
+# ---------------------------------------------------------------------------
+
+
+def _preview_missing(field: str) -> UrlPreviewData:
+    """Build a preview that's complete except for ``field``."""
+    payload = {
+        "url": "https://example.com/canonical",
+        "title": "OG Title",
+        "description": "OG desc",
+        "image_url": "https://img.example/og.png",
+    }
+    payload[field] = ""
+    return UrlPreviewData(**payload)
+
+
+def test_skips_post_when_preview_image_missing(conn, caplog, monkeypatch):
+    client = _FakeClient()
+    _patch_preview(monkeypatch, returns=_preview_missing("image_url"))
+    with caplog.at_level(logging.WARNING):
+        post_or_dry_run(
+            client=client,
+            article=_article(),
+            identity=_identity(),
+            conn=conn,
+            dry_run=False,
+            now_unix=2_000_000,
+        )
+    assert client.posts == []
+    assert any(
+        "skipping post (preview missing image_url)" in r.message for r in caplog.records
+    )
+    rows = list(conn.execute(
+        "SELECT is_skipped, is_dry_run FROM posts WHERE identity_salt=?",
+        (SALT,),
+    ))
+    assert rows == [(1, 0)]
+
+
+def test_skips_post_when_preview_title_missing(conn, caplog, monkeypatch):
+    client = _FakeClient()
+    _patch_preview(monkeypatch, returns=_preview_missing("title"))
+    with caplog.at_level(logging.WARNING):
+        post_or_dry_run(
+            client=client,
+            article=_article(),
+            identity=_identity(),
+            conn=conn,
+            dry_run=False,
+            now_unix=2_000_000,
+        )
+    assert client.posts == []
+    assert any(
+        "skipping post (preview missing title)" in r.message for r in caplog.records
+    )
+
+
+def test_skips_post_when_preview_description_missing(conn, caplog, monkeypatch):
+    client = _FakeClient()
+    _patch_preview(monkeypatch, returns=_preview_missing("description"))
+    with caplog.at_level(logging.WARNING):
+        post_or_dry_run(
+            client=client,
+            article=_article(),
+            identity=_identity(),
+            conn=conn,
+            dry_run=False,
+            now_unix=2_000_000,
+        )
+    assert client.posts == []
+    assert any(
+        "skipping post (preview missing description)" in r.message for r in caplog.records
+    )
+
+
+def test_skip_uses_raw_preview_not_article_fallback(conn, monkeypatch):
+    """Article has title+summary, preview gives us nothing → still skip.
+    Article-side fallbacks do not rescue the rule (user-confirmed)."""
+    client = _FakeClient()
+    _patch_preview(monkeypatch)  # blank UrlPreviewData()
+    post_or_dry_run(
+        client=client,
+        article=_article(),  # has title="An article", summary="summary"
+        identity=_identity(),
+        conn=conn,
+        dry_run=False,
+        now_unix=2_000_000,
+    )
+    assert client.posts == []
+
+
+def test_skip_in_dry_run_does_not_call_client_and_records_skipped_dry_run(
+    conn, monkeypatch
+):
+    _patch_preview(monkeypatch, returns=_preview_missing("image_url"))
+    post_or_dry_run(
+        client=_FakeClient(),
+        article=_article(),
+        identity=_identity(),
+        conn=conn,
+        dry_run=True,
+        now_unix=2_000_000,
+    )
+    rows = list(conn.execute(
+        "SELECT is_skipped, is_dry_run FROM posts WHERE identity_salt=?",
+        (SALT,),
+    ))
+    assert rows == [(1, 1)]
+
+
+def test_skip_recorded_url_dedups_picker(conn, monkeypatch):
+    """Skipped articles must show up in posted_canonical_urls_in_last_24h so
+    the picker won't re-pick the same dud URL on the next cycle."""
+    from news_agent.posts_db import posted_canonical_urls_in_last_24h
+    _patch_preview(monkeypatch, returns=_preview_missing("image_url"))
+    post_or_dry_run(
+        client=_FakeClient(),
+        article=_article(),
+        identity=_identity(),
+        conn=conn,
+        dry_run=False,
+        now_unix=2_000_000,
+    )
+    assert "https://example.com/article" in posted_canonical_urls_in_last_24h(conn, 2_000_000)
+    # But the per-identity quota query excludes skipped rows.
+    assert posts_in_last_24h_for_identity(conn, SALT, 2_000_000) == []
+
+
+def test_full_preview_post_path_unchanged_no_skip(conn, monkeypatch):
+    """Golden-path regression: complete preview → posts normally → no skip row."""
+    client = _FakeClient()
+    _patch_preview(monkeypatch, returns=_FULL_PREVIEW)
+    post_or_dry_run(
+        client=client,
+        article=_article(),
+        identity=_identity(),
+        conn=conn,
+        dry_run=False,
+        now_unix=2_000_000,
+    )
+    assert len(client.posts) == 1
+    posts = posts_in_last_24h_for_identity(conn, SALT, 2_000_000)
+    assert len(posts) == 1
+    assert posts[0].is_skipped is False
+    assert posts[0].is_dry_run is False

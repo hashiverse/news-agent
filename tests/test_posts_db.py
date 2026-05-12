@@ -135,3 +135,114 @@ def test_empty_db_returns_empty(conn):
     now = 1_000_000
     assert posted_canonical_urls_in_last_24h(conn, now) == set()
     assert posts_in_last_24h_for_identity(conn, "any", now) == []
+
+
+# ---------------------------------------------------------------------------
+# is_skipped semantics
+# ---------------------------------------------------------------------------
+
+
+def test_record_post_with_is_skipped_persists_the_flag(conn):
+    record_post(
+        conn,
+        posted_at_unix=1_000_000,
+        identity_salt="A",
+        canonical_url="https://x.com/skipped",
+        source_url="https://feed.example/rss",
+        title="t",
+        item_guid="g",
+        is_dry_run=False,
+        is_skipped=True,
+    )
+    row = conn.execute(
+        "SELECT is_skipped, is_dry_run FROM posts WHERE canonical_url=?",
+        ("https://x.com/skipped",),
+    ).fetchone()
+    assert row == (1, 0)
+
+
+def test_record_post_default_is_skipped_false(conn):
+    """Backward-compat: callers that don't pass is_skipped get is_skipped=0."""
+    record_post(
+        conn,
+        posted_at_unix=1_000_000,
+        identity_salt="A",
+        canonical_url="https://x.com/normal",
+        source_url="https://feed.example/rss",
+        title="t",
+        item_guid="g",
+        is_dry_run=False,
+    )
+    row = conn.execute(
+        "SELECT is_skipped FROM posts WHERE canonical_url=?",
+        ("https://x.com/normal",),
+    ).fetchone()
+    assert row == (0,)
+
+
+def test_skipped_rows_participate_in_cross_identity_dedupe(conn):
+    """The picker's 24h dedupe MUST see skipped URLs — otherwise a permafail
+    YouTube URL would be re-fetched on every cycle."""
+    now = 1_000_000
+    record_post(
+        conn,
+        posted_at_unix=now - 100,
+        identity_salt="A",
+        canonical_url="https://x.com/skipped",
+        source_url="https://feed.example/rss",
+        title="t",
+        item_guid="g",
+        is_dry_run=False,
+        is_skipped=True,
+    )
+    assert posted_canonical_urls_in_last_24h(conn, now) == {"https://x.com/skipped"}
+
+
+def test_skipped_rows_excluded_from_per_identity_quota(conn):
+    """The scheduler's per-identity quota query MUST exclude skipped rows.
+    A skipped article didn't consume a post slot."""
+    now = 1_000_000
+    record_post(
+        conn,
+        posted_at_unix=now - 200,
+        identity_salt="A",
+        canonical_url="https://x.com/posted",
+        source_url="https://feed.example/rss",
+        title="real",
+        item_guid="g1",
+        is_dry_run=False,
+        is_skipped=False,
+    )
+    record_post(
+        conn,
+        posted_at_unix=now - 100,
+        identity_salt="A",
+        canonical_url="https://x.com/skipped",
+        source_url="https://feed.example/rss",
+        title="dud",
+        item_guid="g2",
+        is_dry_run=False,
+        is_skipped=True,
+    )
+    posts = posts_in_last_24h_for_identity(conn, "A", now)
+    assert len(posts) == 1
+    assert posts[0].canonical_url == "https://x.com/posted"
+    assert posts[0].is_skipped is False
+
+
+def test_post_record_carries_is_skipped(conn):
+    """Round-trip: PostRecord exposes is_skipped to callers (default False for
+    non-skipped rows)."""
+    now = 1_000_000
+    record_post(
+        conn,
+        posted_at_unix=now - 100,
+        identity_salt="A",
+        canonical_url="https://x.com/posted",
+        source_url="https://feed.example/rss",
+        title="t",
+        item_guid="g",
+        is_dry_run=False,
+    )
+    posts = posts_in_last_24h_for_identity(conn, "A", now)
+    assert posts[0].is_skipped is False

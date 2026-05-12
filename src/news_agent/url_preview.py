@@ -25,7 +25,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
 MAX_BODY_BYTES = 2 * 1024 * 1024
-USER_AGENT = "news-agent/0.1 (+https://github.com/hashiverse/news-agent)"
+# Many sites (incl. YouTube) whitelist Facebook's link-preview crawler from
+# bot-detection because rich Facebook previews drive traffic, so they serve it
+# the real OG tags. We don't lie about what we are anywhere else — RSS and
+# control-file fetches in sibling modules keep the honest news-agent UA.
+USER_AGENT = "facebookexternalhit/1.1"
 
 
 @dataclass(frozen=True)

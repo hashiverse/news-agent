@@ -138,3 +138,57 @@ def test_existing_feed_cache_table_gets_migrated(tmp_path):
         assert fresh.cache_valid_until_unix == 2000
     finally:
         conn.close()
+
+
+def test_posts_table_has_is_skipped_column(tmp_path):
+    """Fresh DBs include is_skipped in the posts schema."""
+    daemon_dir = tmp_path / "daemon"
+    daemon_dir.mkdir()
+    conn = open_state_db(daemon_dir)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(posts)")}
+        assert "is_skipped" in cols
+    finally:
+        conn.close()
+
+
+def test_existing_posts_table_gets_is_skipped_migrated(tmp_path):
+    """A pre-existing posts table missing `is_skipped` is transparently migrated.
+    Legacy rows survive with is_skipped=0 (= "actually posted", which they were)."""
+    daemon_dir = tmp_path / "daemon"
+    daemon_dir.mkdir()
+    db_path = daemon_dir / STATE_DB_FILENAME
+
+    legacy = sqlite3.connect(str(db_path))
+    legacy.execute(
+        """
+        CREATE TABLE posts (
+            posted_at_unix      INTEGER NOT NULL,
+            identity_salt       TEXT NOT NULL,
+            canonical_url       TEXT NOT NULL,
+            source_url          TEXT NOT NULL,
+            title               TEXT NOT NULL,
+            item_guid           TEXT,
+            is_dry_run          INTEGER NOT NULL
+        )
+        """
+    )
+    legacy.execute(
+        "INSERT INTO posts (posted_at_unix, identity_salt, canonical_url, "
+        "source_url, title, item_guid, is_dry_run) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (100, "salt-A", "https://legacy/x", "https://feed/", "Legacy", "guid-1", 0),
+    )
+    legacy.commit()
+    legacy.close()
+
+    conn = open_state_db(daemon_dir)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(posts)")}
+        assert "is_skipped" in cols
+        # Legacy row survives with is_skipped=0.
+        row = conn.execute(
+            "SELECT canonical_url, is_dry_run, is_skipped FROM posts"
+        ).fetchone()
+        assert row == ("https://legacy/x", 0, 0)
+    finally:
+        conn.close()

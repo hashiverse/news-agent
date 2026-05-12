@@ -62,13 +62,25 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
             source_url          TEXT NOT NULL,
             title               TEXT NOT NULL,
             item_guid           TEXT,
-            is_dry_run          INTEGER NOT NULL
+            is_dry_run          INTEGER NOT NULL,
+            is_skipped          INTEGER NOT NULL DEFAULT 0
         )
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_posted_at ON posts(posted_at_unix)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_canonical ON posts(canonical_url)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_identity  ON posts(identity_salt)")
+
+    # Migration: legacy databases predate is_skipped. Default 0 keeps every
+    # historical row in the "actually posted" set, which is what they were.
+    existing_posts_cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(posts)")
+    }
+    if "is_skipped" not in existing_posts_cols:
+        conn.execute(
+            "ALTER TABLE posts ADD COLUMN is_skipped "
+            "INTEGER NOT NULL DEFAULT 0"
+        )
 
     # feed_cache: per-source-URL cached body + conditional-GET headers.
     # `cache_valid_until_unix` is the moment past which the cache is considered
