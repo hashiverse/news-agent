@@ -50,7 +50,39 @@ from news_agent.url_preview import UrlPreviewData, fetch_url_preview
 logger = logging.getLogger(__name__)
 
 # Re-export so existing `from news_agent.posting import UrlPreviewData` callers keep working.
-__all__ = ["UrlPreviewData", "format_post_html", "post_or_dry_run"]
+__all__ = [
+    "UrlPreviewData",
+    "format_post_html",
+    "post_or_dry_run",
+    "resolve_post_fields",
+]
+
+
+def resolve_post_fields(article: Article, preview: UrlPreviewData) -> dict[str, str]:
+    """Resolve the four card fields from a preview + article, applying fallbacks.
+
+    Single source of truth for the fallback chain — `format_post_html` uses
+    this to render, and `post_or_dry_run` uses it to log what we're about to
+    submit. Keep these two readers in sync by going through one helper.
+    """
+    # Prefer the preview's resolved URL (it may have followed redirects);
+    # fall back to the article's raw URL if preview didn't return one.
+    url = preview.url or article.raw_url
+    # Always show *something* clickable: prefer the OG title, fall back to
+    # the article title, and to the URL itself if both are somehow blank.
+    title = preview.title or article.title or url
+    # Description: prefer the OG/twitter/meta description from the page, but
+    # fall back to the RSS feed's own <description> (article.summary) — many
+    # news sites omit OG tags, and the feed almost always carries a summary.
+    # The summary may contain HTML markup; strip it so the description div
+    # renders as clean text rather than literal `<p>` tags.
+    description = preview.description or strip_html(article.summary)
+    return {
+        "url": url,
+        "title": title,
+        "description": description,
+        "image_url": preview.image_url,
+    }
 
 
 def format_post_html(
@@ -68,24 +100,12 @@ def format_post_html(
     if preview is None:
         preview = UrlPreviewData()
 
-    # Prefer the preview's resolved URL (it may have followed redirects);
-    # fall back to the article's raw URL if preview didn't return one.
-    url = preview.url or article.raw_url
-    # Always show *something* clickable: prefer the OG title, fall back to
-    # the article title, and to the URL itself if both are somehow blank.
-    title = preview.title or article.title or url
-    # Description: prefer the OG/twitter/meta description from the page, but
-    # fall back to the RSS feed's own <description> (article.summary) — many
-    # news sites omit OG tags, and the feed almost always carries a summary.
-    # The summary may contain HTML markup; strip it so the description div
-    # renders as clean text rather than literal `<p>` tags.
-    description = preview.description or strip_html(article.summary)
-
+    fields = resolve_post_fields(article, preview)
     body = convert_text_to_hashiverse_html_x_url_preview(
-        title=title,
-        description=description,
-        image_url=preview.image_url,
-        url=url,
+        title=fields["title"],
+        description=fields["description"],
+        image_url=fields["image_url"],
+        url=fields["url"],
     )
     if hashtags:
         tags_html = " ".join(
@@ -131,6 +151,15 @@ def post_or_dry_run(
         now_unix = int(time.time())
 
     preview = _fetch_preview_safely(article.raw_url, identity.log_label)
+    fields = resolve_post_fields(article, preview)
+    logger.info(
+        "%s post fields: url=%r title=%r description=%r image_url=%r",
+        identity.log_label,
+        fields["url"],
+        fields["title"],
+        fields["description"],
+        fields["image_url"],
+    )
     html_body = format_post_html(article, preview, identity.hashtags)
 
     if dry_run:

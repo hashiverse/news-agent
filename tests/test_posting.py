@@ -320,6 +320,59 @@ def test_dry_run_logs_full_html_body(conn, caplog, monkeypatch):
     assert "https://img.example/og.png" in body
 
 
+def test_post_logs_resolved_fields_before_posting(conn, caplog, monkeypatch):
+    """Operator must be able to see the exact url/title/description/image_url
+    that hit the network — protects against silent garbage like the YouTube
+    `undefined` regression."""
+    _patch_preview(
+        monkeypatch,
+        returns=UrlPreviewData(
+            url="https://example.com/canonical",
+            title="OG Title",
+            description="OG desc",
+            image_url="https://img.example/og.png",
+        ),
+    )
+    with caplog.at_level(logging.INFO):
+        post_or_dry_run(
+            client=_FakeClient(),
+            article=_article(),
+            identity=_identity(),
+            conn=conn,
+            dry_run=True,
+            now_unix=2_000_000,
+        )
+    field_lines = [r.message for r in caplog.records if "post fields:" in r.message]
+    assert len(field_lines) == 1
+    line = field_lines[0]
+    assert "url='https://example.com/canonical'" in line
+    assert "title='OG Title'" in line
+    assert "description='OG desc'" in line
+    assert "image_url='https://img.example/og.png'" in line
+
+
+def test_post_field_log_uses_fallbacks_when_preview_blank(conn, caplog, monkeypatch):
+    """When preview is empty, the log shows the same fallbacks format_post_html
+    will use to render — article.title, article.raw_url, stripped summary."""
+    _patch_preview(monkeypatch)  # returns UrlPreviewData() (all blanks)
+    with caplog.at_level(logging.INFO):
+        post_or_dry_run(
+            client=_FakeClient(),
+            article=_article(),
+            identity=_identity(),
+            conn=conn,
+            dry_run=True,
+            now_unix=2_000_000,
+        )
+    field_lines = [r.message for r in caplog.records if "post fields:" in r.message]
+    assert len(field_lines) == 1
+    line = field_lines[0]
+    assert "url='https://example.com/article?utm_source=x'" in line
+    assert "title='An article'" in line
+    assert "description='summary'" in line
+    assert "image_url=''" in line
+
+
 def test_dry_run_records_history_with_dry_run_flag(conn, monkeypatch):
     _patch_preview(monkeypatch)
     post_or_dry_run(

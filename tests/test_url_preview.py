@@ -164,6 +164,124 @@ def test_extract_strips_whitespace_around_title_text():
 
 
 # ---------------------------------------------------------------------------
+# Defensive validation: broken-template sentinels + invalid URLs
+# (Regression: YouTube bot-detection page leaked literal `undefined` strings
+#  into the preview card; see the "domain=undefined, href=undefined" prod bug.)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_drops_undefined_canonical_url_uses_fetched_url():
+    html = """
+    <html><head>
+      <meta property="og:url" content="undefined">
+      <title>- YouTube</title>
+    </head></html>
+    """
+    out = _extract_url_preview(html, fetched_from_url="https://www.youtube.com/shorts/abc")
+    assert out.url == "https://www.youtube.com/shorts/abc"
+
+
+def test_extract_drops_undefined_canonical_link_href():
+    html = """
+    <html><head>
+      <link rel="canonical" href="undefined">
+    </head></html>
+    """
+    out = _extract_url_preview(html, fetched_from_url="https://input/")
+    assert out.url == "https://input/"
+
+
+def test_extract_drops_undefined_image_url():
+    html = """
+    <html><head>
+      <meta property="og:image" content="undefined">
+    </head></html>
+    """
+    out = _extract_url_preview(html, fetched_from_url="https://input/")
+    assert out.image_url == ""
+
+
+def test_extract_drops_null_string_sentinels():
+    html = """
+    <html><head>
+      <meta property="og:url" content="null">
+      <meta property="og:image" content="null">
+    </head></html>
+    """
+    out = _extract_url_preview(html, fetched_from_url="https://input/")
+    assert out.url == "https://input/"
+    assert out.image_url == ""
+
+
+def test_extract_drops_relative_image_url():
+    html = """
+    <html><head>
+      <meta property="og:image" content="/cdn/img.png">
+    </head></html>
+    """
+    out = _extract_url_preview(html, fetched_from_url="https://input/")
+    assert out.image_url == ""
+
+
+def test_extract_drops_protocol_relative_image_url():
+    html = """
+    <html><head>
+      <meta property="og:image" content="//cdn.example.com/img.png">
+    </head></html>
+    """
+    out = _extract_url_preview(html, fetched_from_url="https://input/")
+    assert out.image_url == ""
+
+
+def test_extract_drops_undefined_title_and_description():
+    html = """
+    <html><head>
+      <meta property="og:title" content="undefined">
+      <meta property="og:description" content="undefined">
+    </head></html>
+    """
+    out = _extract_url_preview(html, fetched_from_url="https://input/")
+    assert out.title == ""
+    assert out.description == ""
+
+
+def test_extract_falls_through_undefined_og_title_to_twitter_then_html_title():
+    html = """
+    <html><head>
+      <meta property="og:title" content="undefined">
+      <meta name="twitter:title" content="Real Title">
+      <title>HTML Title</title>
+    </head></html>
+    """
+    out = _extract_url_preview(html, fetched_from_url="https://input/")
+    assert out.title == "Real Title"
+
+
+def test_extract_case_insensitive_sentinel():
+    html = """
+    <html><head>
+      <meta property="og:url" content="UNDEFINED">
+      <meta property="og:image" content="Null">
+    </head></html>
+    """
+    out = _extract_url_preview(html, fetched_from_url="https://input/")
+    assert out.url == "https://input/"
+    assert out.image_url == ""
+
+
+def test_extract_keeps_legitimate_http_url():
+    html = """
+    <html><head>
+      <meta property="og:url" content="https://example.com/page">
+      <meta property="og:image" content="http://cdn.example.com/img.png">
+    </head></html>
+    """
+    out = _extract_url_preview(html, fetched_from_url="https://input/")
+    assert out.url == "https://example.com/page"
+    assert out.image_url == "http://cdn.example.com/img.png"
+
+
+# ---------------------------------------------------------------------------
 # _fetch_html — local test server
 # ---------------------------------------------------------------------------
 

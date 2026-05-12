@@ -126,18 +126,22 @@ def _extract_url_preview(html_text: str, fetched_from_url: str) -> UrlPreviewDat
     extractor.feed(html_text)
     extractor.close()
 
-    title = extractor.og_title or extractor.twitter_title or extractor.title_tag
+    title = (
+        _clean_text(extractor.og_title)
+        or _clean_text(extractor.twitter_title)
+        or _clean_text(extractor.title_tag)
+    )
     description = (
-        extractor.og_description
-        or extractor.twitter_description
-        or extractor.meta_description
+        _clean_text(extractor.og_description)
+        or _clean_text(extractor.twitter_description)
+        or _clean_text(extractor.meta_description)
     )
     image_url = (
-        extractor.og_image
-        or extractor.twitter_image
-        or extractor.twitter_image_src
+        _clean_url(extractor.og_image)
+        or _clean_url(extractor.twitter_image)
+        or _clean_url(extractor.twitter_image_src)
     )
-    canonical_url = extractor.og_url or extractor.canonical_link
+    canonical_url = _clean_url(extractor.og_url) or _clean_url(extractor.canonical_link)
 
     return UrlPreviewData(
         url=canonical_url or fetched_from_url,
@@ -145,6 +149,39 @@ def _extract_url_preview(html_text: str, fetched_from_url: str) -> UrlPreviewDat
         description=description,
         image_url=image_url,
     )
+
+
+# JS-side `undefined`/`null` can leak into server-rendered meta tags when a
+# site's templating fails (observed on YouTube bot-detection pages served to
+# datacenter IPs). Treat those literal strings as if the field were absent.
+_BROKEN_TEMPLATE_SENTINELS = frozenset({"undefined", "null"})
+
+
+def _clean_text(s: str) -> str:
+    stripped = s.strip()
+    if stripped.lower() in _BROKEN_TEMPLATE_SENTINELS:
+        return ""
+    return stripped
+
+
+def _clean_url(s: str) -> str:
+    """Return ``s`` only if it parses as an absolute http(s) URL.
+
+    Drops empty, sentinel, relative, and protocol-relative values. We
+    deliberately do NOT resolve relative URLs against the page; a field
+    that wasn't worth a valid absolute URL just becomes empty and the
+    upstream fallback chain (posting.format_post_html) kicks in.
+    """
+    cleaned = _clean_text(s)
+    if not cleaned:
+        return ""
+    try:
+        parsed = urlparse(cleaned)
+    except ValueError:
+        return ""
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return cleaned
+    return ""
 
 
 def _fetch_html(
