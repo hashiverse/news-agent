@@ -14,7 +14,7 @@
 identities:
   - salt: "8f4c2a1e9d7b6f3e5a8c2d1b4e7f9a3c6d8b1e4a7c2f5d9b8e1a4c7f2d5b8e1a"
     nickname: "Tesla FSD & Robotaxi news (news-agent)"
-    status: "News about the progress of Tesla's FSD and robotaxi businesses."
+    status: "News about Tesla's FSD and robotaxi businesses."
     enabled: true
     max_posts_per_day: 23
     sources:
