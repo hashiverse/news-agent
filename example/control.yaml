@@ -367,7 +367,7 @@ identities:
   - salt: "a2c4e6f8b1d3a5c7e9b2d4f6a8c1e3b5d7f9a2c4e6b8d1f3a5c7e9b2d4f6a8c1"
     nickname: "UK left politics (news-agent)"
     status: "Left-leaning UK political commentary and journalism."
-    enabled: false
+    enabled: true
     max_posts_per_day: 24
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCOzMAa6IhV6uwYQATYG_2kg  # Novara Media
@@ -382,7 +382,7 @@ identities:
   - salt: "b3d5f7a9c2e4b6d8f1a3c5e7b9d2f4a6c8e1b3d5f7a9c2e4b6d8f1a3c5e7b9d2"
     nickname: "UK centre politics (news-agent)"
     status: "Centrist UK political commentary, podcasts and journalism."
-    enabled: false
+    enabled: true
     max_posts_per_day: 24
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCsufaClk5if2RGqABb-09Uw  # The Rest is Politics (Campbell + Stewart)
@@ -396,7 +396,7 @@ identities:
   - salt: "c4e6a8d2f5b7c9e1a3d5f7b9c2e4a6d8f1b3c5e7a9d2f4b6c8e1a3d5f7b9c2e4"
     nickname: "UK right politics (news-agent)"
     status: "Right-leaning UK political commentary and broadcast."
-    enabled: false
+    enabled: true
     max_posts_per_day: 24
     sources:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC0vn8ISa4LKMunLbzaXLnOQ  # GB News
