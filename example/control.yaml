@@ -409,3 +409,40 @@ identities:
     keywords_required: []
     keywords_optional: []
 
+  - salt: "d2f6b8a4c1e7d3f9b5a2c8e6d4f1b7a3c9e5d2f8b6a4c1e7d3f9b5a2c8e6d4f1"
+    nickname: "Psytrance scene (news-agent)"
+    status: "Psytrance scene news — labels, festivals, artists, mixes, new releases and worldwide parties."
+    enabled: true
+    max_posts_per_day: 23
+    sources:
+      # Record labels
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCK3vmdxfttWSGm4P-31laEQ  # Iboga Records
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCt-Zwf8TON73Wtz21R8DgAg  # Nano Records
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC7ypA97jU5yUbKke2yDTZ2A  # TIP World Records
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCz84THpJhX7B2oAtRreXIDw  # Dacru Records
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCkoZiuAHPmRrk-31qKz9j1g  # Blue Tunes Records
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC-2RdmOxUZLZFVPRe6oQ1oQ  # Spin Twist Records
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC1J5I46pnK6ZsyMADVr0zYw  # Sangoma Records
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UChKHa67XvFQRdb_ec-OnuFA  # Zenon Records
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UC0IDZXNx0sASs8Z1UQ-HBog  # Symphonix
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCEjxeDgkB8mcu-hommZe_NA  # Suntrip Records (Goa)
+      # Festivals
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCPPCFgfts3yiPatg-pxQcIw  # Boom Festival
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCsgcXbjl1R2oPuVUhBn3lQQ  # OZORA Festival
+      # Artists
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCp2F1GDhk-ZGk_ZISqd3ABQ  # Vini Vici
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCsBSMQZsiLprSY6GqhI25Jw  # Astrix
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCrbvoMC0zUvPL8vjswhLOSw  # Infected Mushroom
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UChfawbJdUuHCTo1q-JG0OCg  # Ace Ventura
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCUpnSZE586Cb4DFWTMGQdkA  # Liquid Soul
+      # Curated mixes / radio / scene channels
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCPvkTCeGc0U7KUL5QVcKF-w  # Trancentral
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCl9Z_QLgI8EimikuIMhw6oA  # radiOzora
+      - https://www.youtube.com/feeds/videos.xml?channel_id=UCL-52WUyQRFHsBDH6aXpduA  # Psy-Nation Radio (Ace Ventura & Liquid Soul)
+      # News & events (web feeds)
+      - https://trancentral.tv/feed/                                                  # Trancentral — releases, mixes, scene news
+      - https://www.goabase.net/party/rss/                                            # Goabase — worldwide psytrance party/event listings
+    hashtags: ["psytrance", "music"]
+    keywords_required: []
+    keywords_optional: []
+
