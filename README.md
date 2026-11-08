@@ -52,7 +52,7 @@ news-agent run --control example/control.yaml --test
 
 ### Working with a local hashiverse-client dev wheel
 
-The project depends on `hashiverse-client>=0.1` from PyPI. If you're developing `hashiverse-client` in tandem (it lives in a separate workspace and is built with maturin from a PyO3 Rust crate), you can override the PyPI install with your local build.
+The project depends on `hashiverse-client>=1.1.0` from PyPI. If you're developing `hashiverse-client` in tandem (it lives in a separate workspace and is built with maturin from a PyO3 Rust crate), you can override the PyPI install with your local build.
 
 ```powershell
 # install a freshly-built wheel from the hashiverse-client workspace
@@ -61,7 +61,7 @@ The project depends on `hashiverse-client>=0.1` from PyPI. If you're developing 
 
 For tighter tandem development, use `maturin develop` from the hashiverse-client-python source directory pointing at this venv — that builds and installs editable.
 
-**Gotcha:** any subsequent `pip install -e ".[test]"` from the news-agent repo will re-resolve `hashiverse-client>=0.1` and clobber your dev wheel with the PyPI version. When adding a new news-agent dependency, prefer a targeted `pip install <new-dep>` over a full project reinstall. If you do reinstall, restore the dev wheel afterwards with `pip install --force-reinstall --no-deps <wheel-path>`.
+**Gotcha:** any subsequent `pip install -e ".[test]"` from the news-agent repo will re-resolve `hashiverse-client>=1.1.0` and clobber your dev wheel with the PyPI version. When adding a new news-agent dependency, prefer a targeted `pip install <new-dep>` over a full project reinstall. If you do reinstall, restore the dev wheel afterwards with `pip install --force-reinstall --no-deps <wheel-path>`.
 
 If your dev wheel reports a version below 0.1 (e.g. `0.0.0`), pip prints a `dependency conflicts` warning. **Ignore it** — install succeeded, imports work, the warning is post-install consistency-check noise.
 

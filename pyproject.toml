@@ -16,7 +16,7 @@ dependencies = [
     "blake3>=0.4",
     "watchdog>=4.0",
     "argon2-cffi>=23.0",
-    "hashiverse-client>=0.1",
+    "hashiverse-client>=1.1.0",
     "feedparser>=6.0",
 ]
 
