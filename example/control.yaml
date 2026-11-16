@@ -67,11 +67,12 @@ identities:
     keywords_optional: []
 
   - salt: "5b9d3e7f2a8c1b4e6d5a9f3c8b2e7d4a1f6c9b5e8d2a7f4c1b6e9d3a8f5c2b7e"
-    nickname: "Rust on YouTube (news-agent)"
-    status: "Curated Rust programming content from the top YouTube channels."
+    nickname: "Rust News (news-agent)"
+    status: "Curated Rust news: official blog, This Week in Rust, RustSec, r/rust, lobste.rs, Hacker News, core-team blogs, podcasts and top YouTube channels."
     enabled: true
-    max_posts_per_day: 31
+    max_posts_per_day: 62
     sources:
+      # --- YouTube ---
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCaYhcUwRBNscFNUKTjgPFiA  # Rust Programming Language (official)
       - https://www.youtube.com/feeds/videos.xml?channel_id=UC_iD0xppBwwsrM9DegC5cQQ  # Jon Gjengset (Crust of Rust)
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCSp-OaMpsO8K0KkOqyBl7_w  # Let's Get Rusty
@@ -85,6 +86,38 @@ identities:
       - https://www.youtube.com/feeds/videos.xml?channel_id=UClny6qj9Mv7uFo9XGUGYQBA  # timClicks (Tim McNamara)
       - https://www.youtube.com/feeds/videos.xml?channel_id=UChl_NKOs1qqh_x7yJfaDpDw  # Tantan (Rust gamedev)
       - https://www.youtube.com/feeds/videos.xml?channel_id=UCqMYWsCIyw82fHIGemlDPLg  # Bevy Engine
+      # --- Official / project ---
+      - https://blog.rust-lang.org/feed.xml                         # Rust Blog (releases, announcements)
+      - https://blog.rust-lang.org/inside-rust/feed.xml             # Inside Rust (team blog)
+      - https://this-week-in-rust.org/rss.xml                       # This Week in Rust
+      - https://rustfoundation.org/feed/                            # Rust Foundation
+      - https://rustsec.org/feed.xml                                # RustSec security advisories
+      - https://users.rust-lang.org/c/announcements/6.rss           # users.rust-lang.org — Announcements
+      # --- Community aggregators (Rust-scoped) ---
+      - https://www.reddit.com/r/rust/top/.rss?t=day                # r/rust (top of day)
+      - https://lobste.rs/t/rust.rss                                # lobste.rs — rust tag
+      - https://hnrss.org/newest?q=rust&points=50                   # Hacker News — Rust stories with 50+ points
+      # --- Individual blogs ---
+      - https://smallcultfollowing.com/babysteps/atom.xml           # Niko Matsakis (baby steps)
+      - https://without.boats/index.xml                             # without.boats
+      - https://www.ralfj.de/blog/feed.xml                          # Ralf Jung
+      - https://blog.m-ou.se/index.xml                              # Mara Bos
+      - https://matklad.github.io/feed.xml                          # matklad
+      - https://fasterthanli.me/index.xml                           # fasterthanli.me (Amos Wenger)
+      - https://raphlinus.github.io/feed.xml                        # Raph Levien
+      - https://blog.yoshuawuyts.com/rss.xml                        # Yoshua Wuyts
+      - https://corrode.dev/rss.xml                                 # corrode.dev (Matthias Endler)
+      - https://www.lpalmieri.com/rss.xml                           # Luca Palmieri
+      - https://www.ncameron.org/blog/rss/                          # Nick Cameron
+      - https://faultlore.com/blah/rss.xml                          # Faultlore (Aria Desires)
+      # --- Ecosystem projects ---
+      - https://bevyengine.org/atom.xml                             # Bevy news
+      - https://tokio.rs/blog/index.xml                             # Tokio blog
+      - https://tauri.app/blog/rss.xml                              # Tauri blog
+      - https://ferrous-systems.com/blog/feed.xml                   # Ferrous Systems
+      # --- Podcasts ---
+      - https://rustacean-station.org/podcast.rss                   # Rustacean Station
+      - https://letscast.fm/podcasts/rust-in-production-82281512/feed  # Rust in Production (corrode)
     hashtags: ["rust"]
     keywords_required: ["rust"]
     keywords_optional: []
